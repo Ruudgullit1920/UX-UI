@@ -5,7 +5,6 @@ import re
 import subprocess
 import sys
 import uuid
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -332,10 +331,11 @@ def run_pipeline(args: argparse.Namespace) -> None:
             report_output_dir,
             "--output-dir",
             vercel_output_dir,
+            "--audit-slug",
+            workspace.job_id,
         ]
         if deploy_vercel:
             deploy_args.append("--deploy")
-            deploy_args.extend(["--audit-slug", f"website-{datetime.now().strftime('%Y%m%d%H%M%S')}"])
             if args.vercel_preview:
                 deploy_args.append("--preview")
             elif args.vercel_prod:

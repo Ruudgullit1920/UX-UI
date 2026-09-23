@@ -46,6 +46,7 @@ def test_simulated_parallel_pipelines_use_only_their_own_explicit_artifacts(tmp_
     monkeypatch.setattr(pipeline, "ROOT_DIR", tmp_path)
     monkeypatch.setattr(pipeline, "NAVIGATOR_DIR", tmp_path / "navigator")
     consumed_results: dict[str, str] = {}
+    packaging_commands: list[list[str]] = []
 
     def fake_run(command, **_kwargs):
         values = [str(value) for value in command]
@@ -69,7 +70,11 @@ def test_simulated_parallel_pipelines_use_only_their_own_explicit_artifacts(tmp_
             raise AssertionError(f"Unexpected pipeline command: {values}")
 
     monkeypatch.setattr(pipeline, "run_command", fake_run)
-    monkeypatch.setattr(pipeline, "run_command_capture", lambda *_args, **_kwargs: "")
+    def fake_run_capture(command, **_kwargs):
+        packaging_commands.append([str(value) for value in command])
+        return ""
+
+    monkeypatch.setattr(pipeline, "run_command_capture", fake_run_capture)
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         list(executor.map(pipeline.run_pipeline, (pipeline_args("pipeline-a"), pipeline_args("pipeline-b"))))
@@ -83,3 +88,4 @@ def test_simulated_parallel_pipelines_use_only_their_own_explicit_artifacts(tmp_
     assert workspace_a.report.joinpath("index.html").exists()
     assert workspace_b.report.joinpath("index.html").exists()
     assert workspace_a.audit_results != workspace_b.audit_results
+    assert {option(command, "--audit-slug").name for command in packaging_commands} == {"pipeline-a", "pipeline-b"}
