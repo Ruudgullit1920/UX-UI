@@ -41,6 +41,17 @@ def test_machine_report_makes_partial_measurement_visible(tmp_path):
         {
             "site": {"display_name": "Partial audit"},
             "executiveSummary": {"axesScored": 1, "axesTotal": 5, "overallCoverage": 0.2},
+            "coverage": {
+                "summary": {
+                    "coverageStatus": "incomplete",
+                    "discovered": 13,
+                    "selected": 2,
+                    "completed": 2,
+                    "failed": 0,
+                    "excluded": "not available",
+                    "coverageRatio": 0.15,
+                }
+            },
         },
         tmp_path,
     )
@@ -48,3 +59,6 @@ def test_machine_report_makes_partial_measurement_visible(tmp_path):
     assert "Axes scored: 1 of 5" in report
     assert "20%" in report
     assert "not treated as passes" in report
+    assert "Audit scope: deterministic representative page sample (incomplete)" in report
+    assert "Discovered: 13" in report
+    assert "Excluded: 0" in report

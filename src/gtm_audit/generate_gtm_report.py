@@ -49,6 +49,13 @@ def clean_text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
 
 
+def safe_int(value: Any) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def html_attrs(attrs: Dict[str, Any]) -> str:
     parts = []
     for key, value in attrs.items():
