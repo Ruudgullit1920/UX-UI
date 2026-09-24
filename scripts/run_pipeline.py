@@ -333,6 +333,8 @@ def run_pipeline(args: argparse.Namespace) -> None:
             vercel_output_dir,
             "--audit-slug",
             workspace.job_id,
+            "--asset-root",
+            workspace.root,
         ]
         if deploy_vercel:
             deploy_args.append("--deploy")

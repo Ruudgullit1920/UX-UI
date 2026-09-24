@@ -940,7 +940,7 @@ def _packaged_report_url(static_dir: Path, job_id: str) -> str:
 def _package_local_report(report_dir: Path, vercel_dir: Path, job_id: str) -> str:
     from src.gtm_audit.vercel_static_deploy import package_report_for_vercel
 
-    package_report_for_vercel(report_dir, vercel_dir, audit_slug=job_id)
+    package_report_for_vercel(report_dir, vercel_dir, audit_slug=job_id, asset_root=report_dir.parent)
     return _packaged_report_url(vercel_dir, job_id)
 
 

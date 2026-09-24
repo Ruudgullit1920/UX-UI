@@ -89,3 +89,4 @@ def test_simulated_parallel_pipelines_use_only_their_own_explicit_artifacts(tmp_
     assert workspace_b.report.joinpath("index.html").exists()
     assert workspace_a.audit_results != workspace_b.audit_results
     assert {option(command, "--audit-slug").name for command in packaging_commands} == {"pipeline-a", "pipeline-b"}
+    assert {option(command, "--asset-root").name for command in packaging_commands} == {"pipeline-a", "pipeline-b"}

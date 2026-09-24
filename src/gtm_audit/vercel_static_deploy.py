@@ -51,9 +51,9 @@ def _is_external_or_special(href: str) -> bool:
     )
 
 
-def _asset_href_for_source(source: Path) -> str:
+def _asset_href_for_source(source: Path, asset_root: Path) -> str:
     try:
-        rel = source.resolve().relative_to(ROOT_DIR.resolve())
+        rel = source.resolve().relative_to(asset_root.resolve())
     except ValueError:
         rel = Path(source.name)
     return quote((Path("assets") / rel).as_posix(), safe="/:#?&=%")
@@ -64,7 +64,7 @@ def _safe_slug(value: str) -> str:
     return slug[:80] or "audit"
 
 
-def _copy_report_with_assets(report_dir: Path, target_dir: Path) -> Path:
+def _copy_report_with_assets(report_dir: Path, target_dir: Path, *, asset_root: Path | None = None) -> Path:
     report_dir = report_dir if report_dir.is_absolute() else ROOT_DIR / report_dir
     target_dir = target_dir if target_dir.is_absolute() else ROOT_DIR / target_dir
     index_path = report_dir / "index.html"
@@ -72,6 +72,11 @@ def _copy_report_with_assets(report_dir: Path, target_dir: Path) -> Path:
         raise FileNotFoundError(f"Report index.html not found: {index_path}")
 
     report_root = report_dir.resolve()
+    asset_root = (asset_root or report_root)
+    asset_root = asset_root if asset_root.is_absolute() else ROOT_DIR / asset_root
+    asset_root = asset_root.resolve()
+    if not _inside(report_root, asset_root):
+        raise ValueError("Report directory must remain inside the selected audit directory.")
     for source in report_root.rglob("*"):
         if source.is_symlink():
             raise ValueError("Report publication does not allow symlinks.")
@@ -93,12 +98,18 @@ def _copy_report_with_assets(report_dir: Path, target_dir: Path) -> Path:
             continue
         decoded_href = unquote(urlsplit(href).path)
         source = (report_dir / decoded_href).resolve()
-        if not source.exists() or not source.is_file() or not _inside(source, report_dir):
+        if (
+            not source.exists()
+            or not source.is_file()
+            or source.is_symlink()
+            or not _inside(source, asset_root)
+        ):
             raise ValueError("Report assets must remain inside the selected audit directory.")
-        relative_asset = source.relative_to(report_root)
-        target = target_dir / relative_asset
+        relative_asset = source.relative_to(asset_root)
+        target = target_dir / "assets" / relative_asset
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
+        rewrites[href] = _asset_href_for_source(source, asset_root)
 
     for old, new in rewrites.items():
         html = html.replace(f'"{old}"', f'"{new}"')
@@ -106,13 +117,19 @@ def _copy_report_with_assets(report_dir: Path, target_dir: Path) -> Path:
     return output_index
 
 
-def package_report_for_vercel(report_dir: Path, static_dir: Path, audit_slug: str = "") -> Path:
+def package_report_for_vercel(
+    report_dir: Path,
+    static_dir: Path,
+    audit_slug: str = "",
+    *,
+    asset_root: Path | None = None,
+) -> Path:
     static_dir = static_dir if static_dir.is_absolute() else ROOT_DIR / static_dir
     slug = _safe_slug(audit_slug) if audit_slug else ""
     if not slug:
         _safe_clear_dir(static_dir)
         static_dir.rmdir()
-        return _copy_report_with_assets(report_dir, static_dir)
+        return _copy_report_with_assets(report_dir, static_dir, asset_root=asset_root)
 
     static_dir.mkdir(parents=True, exist_ok=True)
     current_report_dir = static_dir / "audits" / slug
@@ -120,7 +137,7 @@ def package_report_for_vercel(report_dir: Path, static_dir: Path, audit_slug: st
         if not _inside(current_report_dir, static_dir):
             raise ValueError("Invalid audit packaging target.")
         shutil.rmtree(current_report_dir)
-    return _copy_report_with_assets(report_dir, current_report_dir)
+    return _copy_report_with_assets(report_dir, current_report_dir, asset_root=asset_root)
 
 
 def publish_selected_report(report_dir: Path, *, deployer=None, staging_parent: Path | None = None) -> str:
@@ -318,12 +335,14 @@ def main() -> None:
     parser.add_argument("--prod", action="store_true", help="Create a production deployment and update the production alias.")
     parser.add_argument("--preview", action="store_true", help="Create a preview deployment instead of production.")
     parser.add_argument("--audit-slug", default="", help="Optional stable slug for a public /audits/<slug>/ report URL.")
+    parser.add_argument("--asset-root", default="", help="Trusted audit workspace containing report evidence assets.")
     args = parser.parse_args()
 
     report_dir = Path(args.report_dir)
     static_dir = Path(args.output_dir)
     audit_slug = _safe_slug(args.audit_slug) if args.audit_slug else ""
-    output_index = package_report_for_vercel(report_dir, static_dir, audit_slug=audit_slug)
+    asset_root = Path(args.asset_root) if args.asset_root else None
+    output_index = package_report_for_vercel(report_dir, static_dir, audit_slug=audit_slug, asset_root=asset_root)
     print(f"Vercel static report packaged at: {output_index}")
 
     if args.deploy:

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from src.gtm_audit.vercel_static_deploy import publish_selected_report
+from src.gtm_audit.vercel_static_deploy import package_report_for_vercel, publish_selected_report
 
 
 def make_report(path: Path, marker: str):
@@ -67,3 +67,19 @@ def test_outside_asset_reference_and_symlink_are_rejected(tmp_path, monkeypatch)
     monkeypatch.setattr(Path, "is_symlink", lambda self: self.name == "link.txt" or original_is_symlink(self))
     with pytest.raises(ValueError):
         publish_selected_report(report, deployer=lambda *_args, **_kwargs: "unused")
+
+
+def test_audit_workspace_assets_are_packaged_only_when_explicitly_allowed(tmp_path):
+    workspace = tmp_path / "audit"
+    report = workspace / "report"
+    screenshot = workspace / "screenshots" / "main.png"
+    make_report(report, "REPORT")
+    screenshot.parent.mkdir(parents=True)
+    screenshot.write_bytes(b"png")
+    (report / "index.html").write_text('<!doctype html><img src="../screenshots/main.png">', encoding="utf-8")
+
+    output = package_report_for_vercel(report, workspace / "publication", audit_slug="audit-1", asset_root=workspace)
+
+    packaged = output.read_text(encoding="utf-8")
+    assert 'src="assets/screenshots/main.png"' in packaged
+    assert (output.parent / "assets" / "screenshots" / "main.png").read_bytes() == b"png"
