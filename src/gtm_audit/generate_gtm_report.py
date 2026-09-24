@@ -2987,9 +2987,6 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
   </style>
 </head>
 <body>
-  {integrity_banner}
-  {coverage_banner}
-  {measurement_banner}
   <div class="shell">
     <header class="topbar">
       <div class="brand-lockups">

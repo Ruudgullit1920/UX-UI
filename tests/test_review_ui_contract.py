@@ -36,7 +36,7 @@ def test_active_machine_report_surfaces_identify_integrity_metadata():
     assert "Figma pages, frames, components, and rendered surfaces" in figma
 
 
-def test_machine_report_makes_partial_measurement_visible(tmp_path):
+def test_machine_report_omits_top_status_banners(tmp_path):
     report = render_html(
         {
             "site": {"display_name": "Partial audit"},
@@ -55,10 +55,7 @@ def test_machine_report_makes_partial_measurement_visible(tmp_path):
         },
         tmp_path,
     )
-    assert "Measurement coverage (incomplete)" in report
-    assert "Axes scored: 1 of 5" in report
-    assert "20%" in report
-    assert "not treated as passes" in report
-    assert "Audit scope: deterministic representative page sample (incomplete)" in report
-    assert "Discovered: 13" in report
-    assert "Excluded: 0" in report
+    assert "Partial audit" in report
+    assert "Measurement coverage" not in report
+    assert "Audit scope: deterministic representative page sample" not in report
+    assert "Review status: Machine audit" not in report
