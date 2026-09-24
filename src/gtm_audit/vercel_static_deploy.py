@@ -29,16 +29,20 @@ def _inside(path: Path, parent: Path) -> bool:
         return False
 
 
+def _remove_tree(path: Path) -> None:
+    def _clear_readonly(func, failed_path, _exc_info):
+        os.chmod(failed_path, stat.S_IWRITE)
+        func(failed_path)
+
+    shutil.rmtree(path, onerror=_clear_readonly)
+
+
 def _safe_clear_dir(path: Path) -> None:
     resolved = path.resolve()
     if not _inside(resolved, GENERATED_DIR):
         raise RuntimeError(f"Refusing to clear non-generated directory: {resolved}")
     if resolved.exists():
-        def _clear_readonly(func, failed_path, _exc_info):
-            os.chmod(failed_path, stat.S_IWRITE)
-            func(failed_path)
-
-        shutil.rmtree(resolved, onerror=_clear_readonly)
+        _remove_tree(resolved)
     resolved.mkdir(parents=True, exist_ok=True)
 
 
@@ -47,6 +51,7 @@ def _is_external_or_special(href: str) -> bool:
     return (
         not href
         or href.startswith("#")
+        or "${" in href
         or lowered.startswith(("http://", "https://", "mailto:", "tel:", "data:", "javascript:"))
     )
 
@@ -136,7 +141,7 @@ def package_report_for_vercel(
     if current_report_dir.exists():
         if not _inside(current_report_dir, static_dir):
             raise ValueError("Invalid audit packaging target.")
-        shutil.rmtree(current_report_dir)
+        _remove_tree(current_report_dir)
     return _copy_report_with_assets(report_dir, current_report_dir, asset_root=asset_root)
 
 

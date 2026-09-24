@@ -76,10 +76,18 @@ def test_audit_workspace_assets_are_packaged_only_when_explicitly_allowed(tmp_pa
     make_report(report, "REPORT")
     screenshot.parent.mkdir(parents=True)
     screenshot.write_bytes(b"png")
-    (report / "index.html").write_text('<!doctype html><img src="../screenshots/main.png">', encoding="utf-8")
+    (report / "index.html").write_text(
+        '<!doctype html><img src="../screenshots/main.png"><script>status.innerHTML = `<a href="${payload.url}">`</script>',
+        encoding="utf-8",
+    )
 
     output = package_report_for_vercel(report, workspace / "publication", audit_slug="audit-1", asset_root=workspace)
 
     packaged = output.read_text(encoding="utf-8")
     assert 'src="assets/screenshots/main.png"' in packaged
+    assert 'href="${payload.url}"' in packaged
     assert (output.parent / "assets" / "screenshots" / "main.png").read_bytes() == b"png"
+
+    repeated = package_report_for_vercel(report, workspace / "publication", audit_slug="audit-1", asset_root=workspace)
+    assert repeated == output
+    assert (repeated.parent / "assets" / "screenshots" / "main.png").read_bytes() == b"png"
