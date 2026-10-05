@@ -224,3 +224,68 @@ def test_shared_config_is_valid():
     methodology = load_methodology()
     assert [axis.id for axis in methodology.axes] == AXIS_IDS
     assert all(axis.criteria for axis in methodology.axes)
+
+
+EXPECTED_CRITERIA = {
+    "usability": {"primary_action_clear", "action_feedback", "loading_state_feedback", "form_requirements_upfront", "form_input_effort", "inline_validation", "error_recovery", "destructive_action_safeguard", "user_control_exit_undo", "task_completion_confirmation"},
+    "navigation": {"global_nav_present", "current_location_indicated", "nav_label_scent", "nav_structure_depth", "consistent_navigation", "search_where_expected", "breadcrumbs_deep_hierarchy", "no_dead_ends", "logo_links_home"},
+    "visual": {"visual_hierarchy", "gestalt_grouping", "typographic_scale", "readable_line_length", "spacing_rhythm", "colour_purpose", "component_consistency", "button_hierarchy", "affordance_clarity", "purposeful_motion"},
+    "content": {"value_proposition_clear", "plain_language", "descriptive_cta_labels", "scannable_structure", "consistent_terminology", "helpful_error_wording", "instructional_text", "reassurance_microcopy"},
+    "accessibility": {"text_contrast", "non_text_contrast", "text_alternatives", "keyboard_operable", "focus_visible", "focus_order", "names_labels", "structure_headings_landmarks", "target_size", "reflow_zoom", "link_purpose", "motion_control"},
+    "performance": {"lcp", "inp", "cls", "first_render", "asset_weight", "responsive_no_horizontal_scroll", "viewport_configured", "mobile_content_parity", "font_loading_stability"},
+    "trust": {"company_identity_contact", "pricing_transparency", "security_signals", "consent_fair_choice", "no_deceptive_patterns", "credible_social_proof", "policies_accessible", "content_freshness", "professional_polish"},
+}
+RUNTIME_ONLY = {
+    "usability.action_feedback", "usability.loading_state_feedback", "usability.inline_validation", "usability.error_recovery",
+    "accessibility.keyboard_operable", "accessibility.focus_order", "accessibility.motion_control",
+    "performance.lcp", "performance.inp", "performance.cls", "performance.first_render", "performance.asset_weight",
+    "performance.font_loading_stability", "navigation.no_dead_ends",
+}
+
+
+@pytest.fixture(scope="module")
+def shared():
+    return load_methodology()
+
+
+def test_each_axis_has_eight_to_twelve_criteria(shared):
+    for axis in shared.axes:
+        assert 8 <= len(axis.criteria) <= 12, axis.id
+
+
+def test_each_axis_has_at_least_two_core_criteria(shared):
+    for axis in shared.axes:
+        assert sum(c.weight == "core" for c in axis.criteria) >= 2, axis.id
+
+
+def test_criterion_ids_match_the_authored_list(shared):
+    for axis in shared.axes:
+        assert {c.id.split(".", 1)[1] for c in axis.criteria} == EXPECTED_CRITERIA[axis.id], axis.id
+
+
+def test_rejected_examples_cite_no_element(shared):
+    import re
+    for axis in shared.axes:
+        for c in axis.criteria:
+            for text in (c.example_rejected.en, c.example_rejected.fr):
+                assert not re.search(r"\be\d+\b", text), c.id
+
+
+def test_good_examples_cite_an_element(shared):
+    import re
+    for axis in shared.axes:
+        for c in axis.criteria:
+            assert re.search(r"\be\d+\b", c.example_good.en), c.id
+
+
+def test_runtime_only_criteria_exclude_figma(shared):
+    for criterion_id in RUNTIME_ONLY:
+        assert "figma" not in shared.criterion(criterion_id).targets, criterion_id
+    assert "figma" not in shared.criterion("performance.viewport_configured").targets
+
+
+def test_defect_families_are_not_shared_across_axes(shared):
+    owner = {}
+    for axis in shared.axes:
+        for c in axis.criteria:
+            assert owner.setdefault(c.logical_defect_family, axis.id) == axis.id, c.logical_defect_family
