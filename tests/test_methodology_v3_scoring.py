@@ -59,6 +59,8 @@ def test_measured_rows_are_always_eligible(methodology):
     ({"confidence": 0.9, "elementIds": []}, False),
     ({"confidence": 0.9, "screenshotRegion": {"x": 0, "y": 0, "width": 10, "height": 10}}, True),
     ({"confidence": "85", "elementIds": ["e4"]}, True),
+    ({"outcome": "pass", "confidence": 0.9}, True),  # passes are reported as ids, with no location to cite
+    ({"outcome": "pass", "confidence": 0.5}, False),
 ])
 def test_ai_assessed_eligibility(methodology, row, expected):
     criterion = methodology.criterion("usability.primary_action_clear")
@@ -73,3 +75,157 @@ def test_ai_assessed_eligibility(methodology, row, expected):
 def test_manual_only_needs_confirmation(methodology, row, expected):
     criterion = methodology.criterion("usability.destructive_action_safeguard")
     assert is_score_eligible(row, criterion, GATE) is expected
+
+
+# --- Task 4: axis scoring -------------------------------------------------
+
+from src.gtm_audit.methodology_v3.scoring import dedupe_key, maturity_for, score_axis_v3
+
+
+def _passes(axis, target="website", **extra):
+    return [{"criterionId": c.id, "outcome": "pass", "pageId": "home", "confidence": 0.95, "reviewStatus": "confirmed", **extra}
+            for c in axis.criteria if target in c.targets]
+
+
+def _fail(criterion_id, severity="medium", **extra):
+    row = {"criterionId": criterion_id, "outcome": "fail", "severity": severity, "pageId": "home", "elementIds": ["e1"],
+           "confidence": 0.95, "reviewStatus": "confirmed"}
+    row.update(extra)
+    return row
+
+
+def _without(rows, criterion_id):
+    return [row for row in rows if row["criterionId"] != criterion_id]
+
+
+def _small_axis(methodology, criteria_targets):
+    template = methodology.criterion("accessibility.text_contrast")
+    criteria = tuple(
+        template.model_copy(update={"id": f"accessibility.c{i}", "targets": targets, "logical_defect_family": f"fam-{i}"})
+        for i, targets in enumerate(criteria_targets)
+    )
+    return methodology.axis("accessibility").model_copy(update={"criteria": criteria})
+
+
+def test_all_pass_scores_100_and_level_5(methodology):
+    axis = methodology.axis("usability")
+    result = score_axis_v3(_passes(axis), axis, "website", methodology.scoring)
+    assert result.score == 100 and result.maturity == 5
+    assert result.worst_severity is None and result.scored_defects == 0
+    assert result.maturity_label.en == "Excellent"
+
+
+def test_core_fail_and_supporting_pass_scores_twenty(methodology):
+    axis = _small_axis(methodology, [("website",), ("website",)])
+    core, supporting = axis.criteria
+    axis = axis.model_copy(update={"criteria": (core, supporting.model_copy(update={"weight": "supporting"}))})
+    rows = [_fail(core.id, "medium"), {"criterionId": supporting.id, "outcome": "pass"}]
+    result = score_axis_v3(rows, axis, "website", methodology.scoring)
+    assert result.score == 20 and result.maturity == 1
+
+
+def test_critical_fail_on_ninety_five_axis_caps_maturity_at_two(methodology):
+    axis = methodology.axis("usability")
+    rows = _without(_passes(axis), "usability.form_input_effort") + [_fail("usability.form_input_effort", "critical")]
+    result = score_axis_v3(rows, axis, "website", methodology.scoring)
+    assert result.score == 70  # base 95 (19 of 20 weight) minus 25
+    assert result.maturity == 2 and result.worst_severity is Severity.CRITICAL
+
+
+def test_maturity_caps(methodology):
+    bands = methodology.scoring.maturity_bands
+    assert maturity_for(95, None, bands) == 5
+    assert maturity_for(95, Severity.HIGH, bands) == 4
+    assert maturity_for(95, Severity.CRITICAL, bands) == 2
+    assert maturity_for(95, Severity.MEDIUM, bands) == 5
+    assert maturity_for(20, Severity.CRITICAL, bands) == 1
+    assert maturity_for(75, None, bands) == 4 and maturity_for(74.9, None, bands) == 3
+
+
+def test_high_fail_caps_maturity_at_four(methodology):
+    axis = methodology.axis("usability")
+    rows = _without(_passes(axis), "usability.form_input_effort") + [_fail("usability.form_input_effort", "high")]
+    assert score_axis_v3(rows, axis, "website", methodology.scoring).maturity <= 4
+
+
+def test_unknown_or_foreign_criterion_is_ignored(methodology):
+    axis = methodology.axis("usability")
+    rows = _passes(axis) + [_fail("usability.does_not_exist", "critical"), _fail("trust.pricing_transparency", "critical"), {"outcome": "fail"}]
+    result = score_axis_v3(rows, axis, "website", methodology.scoring)
+    assert result.score == 100 and result.scored_defects == 0
+
+
+def test_distinct_defects_without_location_never_collapse(methodology):
+    axis = methodology.axis("usability")
+    a = {"criterionId": "usability.form_input_effort", "outcome": "fail", "severity": "medium", "findingId": "f1"}
+    b = {"criterionId": "usability.form_input_effort", "outcome": "fail", "severity": "medium", "findingId": "f2"}
+    criterion = methodology.criterion("usability.form_input_effort")
+    assert dedupe_key(a, criterion) != dedupe_key(b, criterion)
+    rows = _without(_passes(axis), "usability.form_input_effort") + [a, b]
+    result = score_axis_v3(rows, axis, "website", methodology.scoring)
+    assert result.scored_defects == 2 and result.score == 85  # base 95 minus 2 x 5
+
+
+def test_same_defect_from_three_detectors_is_penalised_once(methodology):
+    axis = methodology.axis("accessibility")
+    rows = _without(_passes(axis), "accessibility.text_contrast") + [
+        _fail("accessibility.text_contrast", "medium", source="axe", findingId="axe-1", elementIds=["e2", "e1"]),
+        _fail("accessibility.text_contrast", "medium", source="custom", findingId="chk-9", elementIds=["e1", "e2"]),
+        _fail("accessibility.text_contrast", "high", source="ai", findingId="ai-3", elementIds=["e1", "e2"]),
+    ]
+    result = score_axis_v3(rows, axis, "website", methodology.scoring)
+    assert result.scored_defects == 1
+    assert result.worst_severity is Severity.HIGH  # highest severity kept for the key
+    total = sum(c.numeric_weight for c in axis.criteria)
+    assert result.score == pytest.approx(100 * (total - 3) / total - 12)
+
+
+def test_figma_scores_from_evaluated_criteria_with_coverage(methodology):
+    runtime = ("website", "webapp", "mobile")
+    axis = _small_axis(methodology, [("website", "figma")] * 4 + [runtime] * 6)
+    rows = [{"criterionId": c.id, "outcome": "pass"} for c in axis.criteria]
+    result = score_axis_v3(rows, axis, "figma", methodology.scoring)
+    assert result is not None and result.score == 100
+    assert result.coverage.evaluated == 4 and result.coverage.applicable == 4
+    assert set(result.coverage.not_applicable_for_target) == {f"accessibility.c{i}" for i in range(4, 10)}
+    assert result.coverage.not_evaluated == ()
+
+
+def test_unevaluated_criteria_are_listed_and_zero_evaluated_scores_zero(methodology):
+    axis = _small_axis(methodology, [("website",)] * 3)
+    rows = [{"criterionId": "accessibility.c0", "outcome": "warning"}, {"criterionId": "accessibility.c1", "outcome": "unknown"}]
+    result = score_axis_v3(rows, axis, "website", methodology.scoring)
+    assert result.score == 0.0 and result.maturity == 1
+    assert result.coverage.evaluated == 0 and result.coverage.applicable == 3
+    assert set(result.coverage.not_evaluated) == {"accessibility.c0", "accessibility.c1", "accessibility.c2"}
+
+
+def test_zero_applicable_criteria_returns_none(methodology):
+    axis = _small_axis(methodology, [("website",)] * 3)
+    assert score_axis_v3([], axis, "figma", methodology.scoring) is None
+
+
+def test_key_task_escalation_is_applied_and_recorded(methodology):
+    axis = methodology.axis("usability")
+    rows = _without(_passes(axis), "usability.form_input_effort") + [
+        _fail("usability.form_input_effort", "medium", onKeyTask=True, findingId="f7")
+    ]
+    result = score_axis_v3(rows, axis, "website", methodology.scoring)
+    assert result.worst_severity is Severity.HIGH
+    assert result.score == 83  # base 95 minus high 12
+    assert result.escalations == ("f7",)
+
+
+def test_low_confidence_ai_fail_is_an_observation_only(methodology):
+    axis = methodology.axis("usability")
+    weak = _fail("usability.primary_action_clear", "high", confidence=0.5, findingId="ai-weak")
+    result = score_axis_v3(_passes(axis) + [weak], axis, "website", methodology.scoring)
+    assert result.score == 100 and result.scored_defects == 0
+    assert [row["findingId"] for row in result.observations] == ["ai-weak"]
+
+
+def test_missing_severity_on_fail_defaults_to_medium(methodology):
+    axis = methodology.axis("usability")
+    rows = _without(_passes(axis), "usability.form_input_effort") + [_fail("usability.form_input_effort", None)]
+    assert score_axis_v3(rows, axis, "website", methodology.scoring).score == 90
+    assert score_axis_v3(rows, axis, "website", methodology.scoring).score == 90

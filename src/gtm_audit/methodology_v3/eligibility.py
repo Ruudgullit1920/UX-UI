@@ -31,9 +31,14 @@ def _has_location(row: dict) -> bool:
 
 
 def is_score_eligible(row: dict, criterion: Criterion, gate: float) -> bool:
-    """Measured evidence always counts; AI evidence needs confidence and a location; manual needs confirmation."""
+    """Measured evidence always counts; AI evidence needs confidence and a location; manual needs confirmation.
+
+    AI passes are reported as criterion ids with nothing to point at, so only
+    non-pass AI rows must cite element ids or a screenshot region.
+    """
     if criterion.evidence_type == "measured":
         return True
     if criterion.evidence_type == "ai_assessed":
-        return normalize_confidence(row.get("confidence")) >= gate and _has_location(row)
+        confident = normalize_confidence(row.get("confidence")) >= gate
+        return confident and (row.get("outcome") == "pass" or _has_location(row))
     return row.get("reviewStatus") == "confirmed"
