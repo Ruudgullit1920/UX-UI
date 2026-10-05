@@ -23,12 +23,13 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import quote, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
 
 from dotenv import load_dotenv
 from PIL import Image, UnidentifiedImageError
 
 from src.audit.workspace import AuditWorkspace, atomic_write_json, atomic_write_text
+from src.report.roadmap_teaser import expert_booking_config, findings_from_report, teaser_payload
 from src.jobs import AuditStorageManager, AuditWorker, JobStatus, JobStore
 from src.security.auth import AuthenticatedUser, AuthenticationError, authenticate_bearer, validate_auth_configuration
 from src.security.network_policy import UnsafeURLError, validate_public_url
@@ -388,7 +389,7 @@ def _snapshot_for_request(job: dict[str, Any], handler: BaseHTTPRequestHandler) 
     return payload
 
 
-def _machine_report_context(job_id: str, revision: dict[str, Any] | None) -> tuple[dict[str, Any], str]:
+def _machine_audit_data(job_id: str) -> dict[str, Any]:
     workspace = AuditWorkspace(job_id, AUDITS_DIR)
     source_root = AUDITS_DIR
     source = workspace.gtm_audit if workspace.gtm_audit.is_file() else workspace.audit_results
@@ -403,6 +404,11 @@ def _machine_report_context(job_id: str, revision: dict[str, Any] | None) -> tup
         machine = {} if _contains_symlink(source, source_root) else json.loads(source.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         machine = {}
+    return machine if isinstance(machine, dict) else {}
+
+
+def _machine_report_context(job_id: str, revision: dict[str, Any] | None) -> tuple[dict[str, Any], str]:
+    machine = _machine_audit_data(job_id)
     from src.report.reviewed_report import render_reviewed_report, reviewed_report_context
     context = reviewed_report_context(audit_id=job_id, machine=machine, revision=revision)
     return context, render_reviewed_report(context)
@@ -1580,7 +1586,8 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         connect_sources = " ".join(sorted(allowed_origins))
-        self.send_header("Content-Security-Policy", f"default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' {connect_sources}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
+        frame_sources = " frame-src https://cal.com https://app.cal.com;" if expert_booking_config() else ""
+        self.send_header("Content-Security-Policy", f"default-src 'self'; script-src 'self' 'unsafe-inline';{frame_sources} style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' {connect_sources}; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "no-referrer")
@@ -1696,7 +1703,7 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
             self._send_file(FRONTEND_BUILD_DIR / "index.html")
             return
         if parsed.path == "/" or parsed.path.startswith("/report/") or parsed.path.startswith("/static/") or (not parsed.path.startswith(("/api/", "/audits/", "/artifacts/"))):
-            if parsed.path == "/":
+            if parsed.path in {"/", "/app", "/app/"}:
                 self._send_file(FRONTEND_BUILD_DIR / "index.html")
                 return
             if parsed.path.startswith("/static/"):
@@ -1765,6 +1772,18 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
                 self._send_json({"error": "Review revision not found."}, HTTPStatus.NOT_FOUND); return
             _context, rendered = _machine_report_context(job_id, revision)
             body = rendered.encode("utf-8"); self.send_response(HTTPStatus.OK); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+            return
+        if parsed.path.startswith("/api/audits/") and parsed.path.endswith("/roadmap-teaser"):
+            job_id = unquote(parsed.path.removeprefix("/api/audits/").removesuffix("/roadmap-teaser").strip("/"))
+            job = self._require_owned_job(job_id, user)
+            if not job:
+                return
+            machine = _machine_audit_data(job_id)
+            site = machine.get("site") if isinstance(machine.get("site"), dict) else {}
+            lang = (parse_qs(parsed.query).get("lang") or ["en"])[0]
+            site_url = str(job.get("url") or site.get("homepage") or site.get("url") or "")
+            payload = teaser_payload(findings_from_report(machine), lang=lang, site_url=site_url, report_url=None)
+            self._send_json(payload or {"enabled": False})
             return
         if parsed.path.startswith("/api/audits/") and parsed.path.endswith("/review"):
             job_id = unquote(parsed.path.removeprefix("/api/audits/").removesuffix("/review").strip("/"))

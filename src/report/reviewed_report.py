@@ -4,6 +4,8 @@ from __future__ import annotations
 import html
 from typing import Any
 
+from src.report.roadmap_teaser import render_roadmap_teaser_html
+
 
 def reviewed_report_context(*, audit_id: str, machine: dict[str, Any], revision: dict[str, Any] | None) -> dict[str, Any]:
     changes = (revision or {}).get("changes") if isinstance((revision or {}).get("changes"), dict) else {}
@@ -32,7 +34,9 @@ def reviewed_report_context(*, audit_id: str, machine: dict[str, Any], revision:
             "measurementCoverage": executive.get("overallCoverage"), "priorities": active_priorities, "completeFindings": complete,
             "methodology": ["Representative sampling and Phase 2A collection coverage.", "Deterministic evidence-aware checks and safe interaction testing."],
             "limitations": ["Automated accessibility does not establish complete WCAG conformance.", "Lighthouse is laboratory data, not CrUX or field data.", "VLM interpretation is probabilistic; complex contrast and logical focus order may require human review."],
-            "tools": machine.get("toolMetadata") or {}}
+            "tools": machine.get("toolMetadata") or {},
+            "siteUrl": str((machine.get("site") if isinstance(machine.get("site"), dict) else {}).get("homepage") or (machine.get("site") if isinstance(machine.get("site"), dict) else {}).get("url") or ""),
+            "language": str(machine.get("language") or "en")}
 
 
 def render_reviewed_report(context: dict[str, Any]) -> str:
@@ -45,4 +49,5 @@ def render_reviewed_report(context: dict[str, Any]) -> str:
         f"<p>Reviewer priority: {esc((item.get('review') or {}).get('priorityOverride'))}</p><p>Reviewed recommendation: {esc((item.get('review') or {}).get('reviewedRecommendation'))}</p>"
         f"<p>{'Suppressed from executive priorities: ' + esc((item.get('review') or {}).get('suppressionReason')) if (item.get('review') or {}).get('suppressed') else ''}</p></article>"
         for item in context["completeFindings"])
-    return f"<!doctype html><html><body><header><h1>Audit report</h1><p>Review status: {esc(label)}</p><p>Revision: {esc(context.get('revisionId'))}; Reviewer: {esc(context['reviewer'].get('reviewerId'))}</p></header><section><h2>Executive summary</h2><p>Priority findings: {len(context['priorities'])}</p></section><section><h2>Scope and coverage</h2><p>Collection coverage: {esc(context.get('collectionCoverage'))}; Measurement coverage: {esc(context.get('measurementCoverage'))}</p></section><section><h2>Complete findings</h2>{findings}</section><section><h2>Methodology</h2>{''.join('<p>'+esc(x)+'</p>' for x in context['methodology'])}</section><section><h2>Limitations</h2>{''.join('<p>'+esc(x)+'</p>' for x in context['limitations'])}</section><section><h2>Tool and provenance metadata</h2><pre>{esc(context['tools'])}</pre></section></body></html>"
+    teaser = render_roadmap_teaser_html([item for item in context["completeFindings"] if not (item.get("review") or {}).get("suppressed")], lang=context.get("language", "en"), site_url=context.get("siteUrl", ""))
+    return f"<!doctype html><html><body><header><h1>Audit report</h1><p>Review status: {esc(label)}</p><p>Revision: {esc(context.get('revisionId'))}; Reviewer: {esc(context['reviewer'].get('reviewerId'))}</p></header><section><h2>Executive summary</h2><p>Priority findings: {len(context['priorities'])}</p></section><section><h2>Scope and coverage</h2><p>Collection coverage: {esc(context.get('collectionCoverage'))}; Measurement coverage: {esc(context.get('measurementCoverage'))}</p></section><section><h2>Complete findings</h2>{findings}</section><section><h2>Methodology</h2>{''.join('<p>'+esc(x)+'</p>' for x in context['methodology'])}</section><section><h2>Limitations</h2>{''.join('<p>'+esc(x)+'</p>' for x in context['limitations'])}</section><section><h2>Tool and provenance metadata</h2><pre>{esc(context['tools'])}</pre></section>{teaser}</body></html>"
