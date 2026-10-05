@@ -229,3 +229,143 @@ def test_missing_severity_on_fail_defaults_to_medium(methodology):
     rows = _without(_passes(axis), "usability.form_input_effort") + [_fail("usability.form_input_effort", None)]
     assert score_axis_v3(rows, axis, "website", methodology.scoring).score == 90
     assert score_axis_v3(rows, axis, "website", methodology.scoring).score == 90
+
+
+# --- Task 5: overall score --------------------------------------------------
+
+from src.gtm_audit.methodology_v3.scoring import AxisScore, Coverage, overall_v3
+
+
+def _axis_score(methodology, axis_id, score, maturity=None):
+    bands = methodology.scoring.maturity_bands
+    level = maturity if maturity is not None else maturity_for(score, None, bands)
+    return AxisScore(axis_id=axis_id, score=score, maturity=level, maturity_label=bands[5 - level].label,
+                     coverage=Coverage(1, 1, (), ()), worst_severity=None, scored_defects=0, observations=(), escalations=())
+
+
+def _all_axes(methodology, scores):
+    return [_axis_score(methodology, axis_id, score) for axis_id, score in zip(AXIS_ORDER, scores)]
+
+
+AXIS_ORDER = ("usability", "navigation", "visual", "content", "accessibility", "performance", "trust")
+
+
+def test_overall_equal_weight_average(methodology):
+    result = overall_v3(_all_axes(methodology, [100, 90, 80, 70, 60, 80, 80]), None, methodology)
+    assert result.score == pytest.approx(80)
+    assert result.axes_scored == 7
+    assert result.weights_used == {axis_id: 1.0 for axis_id in AXIS_ORDER}
+
+
+def test_ecommerce_weighting_pulls_toward_trust(methodology):
+    scores = _all_axes(methodology, [80, 80, 80, 80, 80, 80, 40])
+    equal = overall_v3(scores, None, methodology)
+    ecommerce = overall_v3(scores, "ecommerce", methodology)
+    assert ecommerce.score < equal.score
+    assert ecommerce.weights_used["trust"] == 1.5 and ecommerce.weights_used["visual"] == 1.0
+
+
+@pytest.mark.parametrize("product_type", ["spaceship", None, ""])
+def test_unknown_or_missing_product_type_uses_equal_weights(methodology, product_type):
+    result = overall_v3(_all_axes(methodology, [100, 50, 50, 50, 50, 50, 50]), product_type, methodology)
+    assert result.score == pytest.approx(400 / 7)
+    assert set(result.weights_used.values()) == {1.0}
+
+
+def test_none_axes_are_skipped_and_weights_renormalised(methodology):
+    scores = [_axis_score(methodology, "usability", 90), None, _axis_score(methodology, "trust", 60)]
+    result = overall_v3(scores, "ecommerce", methodology)
+    assert result.axes_scored == 2
+    assert result.score == pytest.approx((90 * 1.3 + 60 * 1.5) / 2.8)
+    assert set(result.weights_used) == {"usability", "trust"}
+
+
+def test_overall_maturity_is_capped_by_worst_axis(methodology):
+    scores = [_axis_score(methodology, "usability", 100), _axis_score(methodology, "navigation", 100),
+              _axis_score(methodology, "visual", 95, maturity=1)]
+    result = overall_v3(scores, None, methodology)
+    assert result.score > 90 and result.maturity <= 2
+    assert result.maturity_label.en == "Weak"
+
+
+def test_all_none_scores_zero(methodology):
+    result = overall_v3([None, None], "saas", methodology)
+    assert (result.score, result.maturity, result.axes_scored) == (0.0, 1, 0)
+
+
+def test_seeded_product_type_weights(methodology):
+    weights = methodology.product_type_weights
+    assert set(weights) == {"ecommerce", "saas", "content", "leadgen", "finance", "public_service"}
+    assert weights["ecommerce"] == {"trust": 1.5, "usability": 1.3, "performance": 1.2}
+    assert weights["finance"] == {"trust": 1.6, "accessibility": 1.2}
+    assert weights["public_service"] == {"accessibility": 1.6, "content": 1.3}
+
+
+# --- Task 5: overall score --------------------------------------------------
+
+from src.gtm_audit.methodology_v3.scoring import AxisScore, Coverage, overall_v3
+
+
+def _axis_score(methodology, axis_id, score, maturity=None):
+    bands = methodology.scoring.maturity_bands
+    level = maturity if maturity is not None else maturity_for(score, None, bands)
+    return AxisScore(axis_id=axis_id, score=score, maturity=level, maturity_label=bands[5 - level].label,
+                     coverage=Coverage(1, 1, (), ()), worst_severity=None, scored_defects=0, observations=(), escalations=())
+
+
+def _all_axes(methodology, scores):
+    return [_axis_score(methodology, axis_id, score) for axis_id, score in zip(AXIS_ORDER, scores)]
+
+
+AXIS_ORDER = ("usability", "navigation", "visual", "content", "accessibility", "performance", "trust")
+
+
+def test_overall_equal_weight_average(methodology):
+    result = overall_v3(_all_axes(methodology, [100, 90, 80, 70, 60, 80, 80]), None, methodology)
+    assert result.score == pytest.approx(80)
+    assert result.axes_scored == 7
+    assert result.weights_used == {axis_id: 1.0 for axis_id in AXIS_ORDER}
+
+
+def test_ecommerce_weighting_pulls_toward_trust(methodology):
+    scores = _all_axes(methodology, [80, 80, 80, 80, 80, 80, 40])
+    equal = overall_v3(scores, None, methodology)
+    ecommerce = overall_v3(scores, "ecommerce", methodology)
+    assert ecommerce.score < equal.score
+    assert ecommerce.weights_used["trust"] == 1.5 and ecommerce.weights_used["visual"] == 1.0
+
+
+@pytest.mark.parametrize("product_type", ["spaceship", None, ""])
+def test_unknown_or_missing_product_type_uses_equal_weights(methodology, product_type):
+    result = overall_v3(_all_axes(methodology, [100, 50, 50, 50, 50, 50, 50]), product_type, methodology)
+    assert result.score == pytest.approx(400 / 7)
+    assert set(result.weights_used.values()) == {1.0}
+
+
+def test_none_axes_are_skipped_and_weights_renormalised(methodology):
+    scores = [_axis_score(methodology, "usability", 90), None, _axis_score(methodology, "trust", 60)]
+    result = overall_v3(scores, "ecommerce", methodology)
+    assert result.axes_scored == 2
+    assert result.score == pytest.approx((90 * 1.3 + 60 * 1.5) / 2.8)
+    assert set(result.weights_used) == {"usability", "trust"}
+
+
+def test_overall_maturity_is_capped_by_worst_axis(methodology):
+    scores = [_axis_score(methodology, "usability", 100), _axis_score(methodology, "navigation", 100),
+              _axis_score(methodology, "visual", 95, maturity=1)]
+    result = overall_v3(scores, None, methodology)
+    assert result.score > 90 and result.maturity <= 2
+    assert result.maturity_label.en == "Weak"
+
+
+def test_all_none_scores_zero(methodology):
+    result = overall_v3([None, None], "saas", methodology)
+    assert (result.score, result.maturity, result.axes_scored) == (0.0, 1, 0)
+
+
+def test_seeded_product_type_weights(methodology):
+    weights = methodology.product_type_weights
+    assert set(weights) == {"ecommerce", "saas", "content", "leadgen", "finance", "public_service"}
+    assert weights["ecommerce"] == {"trust": 1.5, "usability": 1.3, "performance": 1.2}
+    assert weights["finance"] == {"trust": 1.6, "accessibility": 1.2}
+    assert weights["public_service"] == {"accessibility": 1.6, "content": 1.3}

@@ -4,7 +4,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Sequence
 
-from .config import Axis, Criterion, LocalizedText, MaturityBand, ScoringConfig
+from .config import Axis, Criterion, LocalizedText, MaturityBand, Methodology, ScoringConfig
 from .eligibility import is_score_eligible
 from .severity import Severity, escalate
 
@@ -127,3 +127,26 @@ def score_axis_v3(rows: Iterable[dict], axis: Axis, target: str, scoring: Scorin
         observations=tuple(observations),
         escalations=tuple(finding for _, finding in defects.values() if finding),
     )
+
+
+@dataclass(frozen=True)
+class OverallScore:
+    score: float
+    maturity: int
+    maturity_label: LocalizedText
+    weights_used: dict[str, float]
+    axes_scored: int
+
+
+def overall_v3(axis_scores: Iterable[AxisScore | None], product_type: str | None, methodology: Methodology) -> OverallScore:
+    """Weighted mean of scored axes; maturity capped at (worst axis level + 1)."""
+    scored = [axis for axis in axis_scores if axis is not None]
+    table = methodology.product_type_weights.get(product_type or "", {})
+    weights = {axis.axis_id: float(table.get(axis.axis_id, 1.0)) for axis in scored}
+    bands = methodology.scoring.maturity_bands
+    if not scored:
+        level = bands[-1].level
+        return OverallScore(0.0, level, _label(level, bands), {}, 0)
+    score = sum(axis.score * weights[axis.axis_id] for axis in scored) / sum(weights.values())
+    level = min(maturity_for(score, None, bands), min(axis.maturity for axis in scored) + 1)
+    return OverallScore(score, level, _label(level, bands), weights, len(scored))

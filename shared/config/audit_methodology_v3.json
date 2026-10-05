@@ -3156,58 +3156,30 @@
   },
   "productTypeWeights": {
     "ecommerce": {
-      "usability": 1.2,
-      "navigation": 1.2,
-      "visual": 1.0,
-      "content": 1.0,
-      "accessibility": 1.0,
-      "performance": 1.2,
-      "trust": 1.5
+      "trust": 1.5,
+      "usability": 1.3,
+      "performance": 1.2
     },
     "saas": {
       "usability": 1.5,
-      "navigation": 1.2,
-      "visual": 1.0,
-      "content": 1.0,
-      "accessibility": 1.0,
-      "performance": 1.0,
-      "trust": 1.0
+      "navigation": 1.2
     },
     "content": {
-      "usability": 1.0,
-      "navigation": 1.3,
-      "visual": 1.0,
       "content": 1.5,
-      "accessibility": 1.0,
-      "performance": 1.2,
-      "trust": 1.0
+      "navigation": 1.3
     },
-    "lead_gen": {
-      "usability": 1.2,
-      "navigation": 1.0,
-      "visual": 1.0,
+    "leadgen": {
       "content": 1.3,
-      "accessibility": 1.0,
-      "performance": 1.0,
-      "trust": 1.3
+      "trust": 1.3,
+      "usability": 1.2
     },
     "finance": {
-      "usability": 1.2,
-      "navigation": 1.0,
-      "visual": 1.0,
-      "content": 1.0,
-      "accessibility": 1.2,
-      "performance": 1.0,
-      "trust": 1.6
+      "trust": 1.6,
+      "accessibility": 1.2
     },
     "public_service": {
-      "usability": 1.3,
-      "navigation": 1.2,
-      "visual": 1.0,
-      "content": 1.3,
-      "accessibility": 1.5,
-      "performance": 1.0,
-      "trust": 1.0
+      "accessibility": 1.6,
+      "content": 1.3
     }
   }
 }
