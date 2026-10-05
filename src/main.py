@@ -17,6 +17,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from src.audit.page_runner import run_page_audit
+from src.audit.auth_session import configured_storage_state, validate_authenticated_page
 from src.audit.lighthouse_runner import run_lighthouse
 from src.audit.page_visit_helpers import dismiss_cookie_banners, extract_basic_page_info, wait_for_page_ready
 from src.audit.html_postprecess import clean_html_output
@@ -27,6 +28,8 @@ from src.config.audit_config import AUDIT_CONFIG
 from src.security.network_policy import (
     chromium_host_resolver_rules,
     install_playwright_network_guard,
+    sanitize_audit_ssl_keylogfile,
+    validate_dependency_origin,
     validate_public_url,
 )
 from src.utils.file_utils import (
@@ -462,13 +465,22 @@ async def run_responsive_mobile_probe(*, context, page_info: Dict[str, Any], pag
     return result
 
 
-async def collect_responsive_mobile_profiles(browser, pages: List[Dict[str, Any]], config: Dict[str, Any], validated_urls) -> List[Dict[str, Any]]:
+async def collect_responsive_mobile_profiles(
+    browser,
+    pages: List[Dict[str, Any]],
+    config: Dict[str, Any],
+    validated_urls,
+    *,
+    storage_state: pathlib.Path | None = None,
+) -> List[Dict[str, Any]]:
     responsive_config = (config.get("presentationChecks") or {}).get("responsiveDesktopMobile") or {}
     if not responsive_config.get("enabled", True):
         return []
     async def worker(page_info, index):
         print(f"[RESP {index + 1}/{len(pages)}] {page_info['name']} -> mobile viewport")
-        context = await new_isolated_context(browser, config, validated_urls, mobile=True)
+        context = await new_isolated_context(
+            browser, config, validated_urls, mobile=True, storage_state=storage_state
+        )
         try:
             return await run_responsive_mobile_probe(
                 context=context,
@@ -570,7 +582,14 @@ async def launch_browser(playwright, config: Dict[str, Any], validated_urls):
         return await browser_launcher.launch(**fallback_options)
 
 
-async def new_isolated_context(browser, config: Dict[str, Any], validated_urls, *, mobile: bool = False):
+async def new_isolated_context(
+    browser,
+    config: Dict[str, Any],
+    validated_urls,
+    *,
+    mobile: bool = False,
+    storage_state: pathlib.Path | None = None,
+):
     viewport = config["browser"]["viewport"]
     if mobile:
         responsive = (config.get("presentationChecks") or {}).get("responsiveDesktopMobile") or {}
@@ -578,14 +597,17 @@ async def new_isolated_context(browser, config: Dict[str, Any], validated_urls, 
             "width": int(responsive.get("mobileWidth") or 390),
             "height": int(responsive.get("mobileHeight") or 844),
         }
-    context = await browser.new_context(
-        viewport=viewport,
-        ignore_https_errors=config["browser"].get("ignoreHttpsErrors", False),
-        is_mobile=mobile,
-        service_workers="block",
-        locale=config["browser"].get("locale") or None,
-        extra_http_headers={"Accept-Language": config["browser"]["locale"]} if config["browser"].get("locale") else None,
-    )
+    context_options: Dict[str, Any] = {
+        "viewport": viewport,
+        "ignore_https_errors": config["browser"].get("ignoreHttpsErrors", False),
+        "is_mobile": mobile,
+        "service_workers": "block",
+        "locale": config["browser"].get("locale") or None,
+        "extra_http_headers": {"Accept-Language": config["browser"]["locale"]} if config["browser"].get("locale") else None,
+    }
+    if storage_state:
+        context_options["storage_state"] = str(storage_state)
+    context = await browser.new_context(**context_options)
     await install_playwright_network_guard(context, validated_urls)
     return context
 
@@ -606,7 +628,12 @@ def workspace_config(workspace: AuditWorkspace) -> Dict[str, Any]:
     return config
 
 
-async def async_main(job_id: str):
+async def async_main(
+    job_id: str,
+    storage_state_path: str = "",
+    auth_login_url: str = "",
+    allowed_dependency_urls: List[str] | None = None,
+):
     workspace = AuditWorkspace.for_repository(job_id)
     workspace.prepare(mode="website")
     config = workspace_config(workspace)
@@ -669,7 +696,12 @@ async def async_main(job_id: str):
     threshold = float(os.getenv("UX_AUDIT_MIN_COVERAGE_RATIO", "0.8"))
     if not 0 < threshold <= 1:
         raise RuntimeError("UX_AUDIT_MIN_COVERAGE_RATIO must be greater than 0 and at most 1.")
-    atomic_write_json(workspace.run_config, {"schemaVersion": 1, "auditId": workspace.job_id, "locale": os.getenv("UX_AUDIT_LOCALE", "auto"), "browser": config["browser"], "robotsPolicy": ((raw_input.get("extra") or {}).get("robotsPolicy") if isinstance(raw_input, dict) else "respect") or "respect", "pageCap": max_pages, "selectionStrategy": "deterministic representative sampling", "includeAuthPages": bool(config["inputParsing"].get("includeAuthPages")), "coverageThreshold": threshold})
+    storage_state = configured_storage_state(storage_state_path or None)
+    dependency_origins = [
+        validate_dependency_origin(item)
+        for item in (allowed_dependency_urls or [])
+    ]
+    atomic_write_json(workspace.run_config, {"schemaVersion": 1, "auditId": workspace.job_id, "locale": os.getenv("UX_AUDIT_LOCALE", "auto"), "browser": config["browser"], "robotsPolicy": ((raw_input.get("extra") or {}).get("robotsPolicy") if isinstance(raw_input, dict) else "respect") or "respect", "pageCap": max_pages, "selectionStrategy": "deterministic representative sampling", "includeAuthPages": bool(config["inputParsing"].get("includeAuthPages")), "coverageThreshold": threshold, "authenticatedSessionEnabled": bool(storage_state), "allowedDependencyOrigins": [item.url for item in dependency_origins]})
 
     if config["browser"].get("browserType") != "chromium":
         raise RuntimeError("Phase 0 network isolation supports Chromium only.")
@@ -679,6 +711,15 @@ async def async_main(job_id: str):
         checked = validate_public_url(str(page.get("url") or ""))
         page["url"] = checked.url
         validated_urls.append(checked)
+    validated_urls.extend(dependency_origins)
+
+    configured_login_url = auth_login_url.strip() or os.getenv("UX_AUDIT_AUTH_LOGIN_URL", "").strip()
+    if configured_login_url:
+        login_url = validate_public_url(configured_login_url).url
+        if urlsplit(login_url).hostname != urlsplit(validated_urls[0].url).hostname:
+            raise RuntimeError("Authenticated login URL must use the selected audit host.")
+    else:
+        login_url = ""
 
     insecure_tls = bool(config["browser"].get("ignoreHttpsErrors", False))
     environment = (os.getenv("APP_ENV") or os.getenv("UX_ENVIRONMENT") or "development").lower()
@@ -693,17 +734,35 @@ async def async_main(job_id: str):
         f"{config['browser'].get('channel') or config['browser']['browserType']}"
     )
     print(f"Page concurrency: {config['execution']['pageConcurrency']}")
+    if storage_state:
+        print("Authenticated session: local storage state enabled.")
 
     async with async_playwright() as playwright:
         browser = None
         browser = await launch_browser(playwright, config, validated_urls)
 
         try:
+            if storage_state:
+                validation_context = await new_isolated_context(
+                    browser, config, validated_urls, storage_state=storage_state
+                )
+                try:
+                    await validate_authenticated_page(
+                        validation_context,
+                        unique_pages[0]["url"],
+                        login_url=login_url,
+                    )
+                finally:
+                    await validation_context.close()
+                print("Authenticated session validation passed.")
+
             progress = {"completed": 0}
 
             async def worker(page_info, index):
                 print(f"[START {index + 1}/{len(unique_pages)}] {page_info['name']} -> {page_info['url']}")
-                context = await new_isolated_context(browser, config, validated_urls)
+                context = await new_isolated_context(
+                    browser, config, validated_urls, storage_state=storage_state
+                )
                 try:
                     result = await run_page_audit(
                         context=context,
@@ -760,7 +819,9 @@ async def async_main(job_id: str):
                 page.final_url = str(result.get("finalUrl") or "")
                 page.failure_reason = str(result.get("failureReason") or result.get("error") or "")[:300]
                 page.language = str((result.get("pageMetadata") or {}).get("language") or "")
-            responsive_profiles = await collect_responsive_mobile_profiles(browser, unique_pages, config, validated_urls)
+            responsive_profiles = await collect_responsive_mobile_profiles(
+                browser, unique_pages, config, validated_urls, storage_state=storage_state
+            )
             for result, mobile_profile in zip(page_results, responsive_profiles):
                 if isinstance(result, dict):
                     desktop_profile = {
@@ -866,9 +927,14 @@ async def async_main(job_id: str):
 def main():
     parser = argparse.ArgumentParser(description="Run the website extraction stage inside an audit workspace.")
     parser.add_argument("--job-id", required=True)
+    parser.add_argument("--storage-state", default=os.getenv("UX_AUDIT_STORAGE_STATE", ""))
+    parser.add_argument("--auth-login-url", default=os.getenv("UX_AUDIT_AUTH_LOGIN_URL", ""))
+    parser.add_argument("--allowed-dependency-url", action="append", default=[])
     args = parser.parse_args()
     try:
-        asyncio.run(async_main(args.job_id))
+        if sanitize_audit_ssl_keylogfile():
+            print("Ignored a machine-injected SSLKEYLOGFILE for this audit process.")
+        asyncio.run(async_main(args.job_id, args.storage_state, args.auth_login_url, args.allowed_dependency_url))
     except Exception as error:
         print("Fatal error while running audit:", file=sys.stderr)
         print(error, file=sys.stderr)

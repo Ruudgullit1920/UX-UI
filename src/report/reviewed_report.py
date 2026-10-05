@@ -7,14 +7,23 @@ from typing import Any
 
 def reviewed_report_context(*, audit_id: str, machine: dict[str, Any], revision: dict[str, Any] | None) -> dict[str, Any]:
     changes = (revision or {}).get("changes") if isinstance((revision or {}).get("changes"), dict) else {}
-    findings = machine.get("allFindings") or machine.get("findings") or []
+    findings = machine.get("allFindings") or machine.get("findings") or machine.get("deduplicatedFindings") or [point for axis in machine.get("axes", []) if isinstance(axis, dict) for point in axis.get("painPoints", [])]
     priorities = machine.get("priorities") or machine.get("executiveSummary", {}).get("topPriorities") or []
     complete = []
     for finding in findings if isinstance(findings, list) else []:
         if not isinstance(finding, dict): continue
-        item = dict(finding); item["review"] = changes.get(str(finding.get("findingId") or finding.get("id") or ""), {})
+        item = dict(finding); item["review"] = changes.get(str(finding.get("findingId") or finding.get("id") or finding.get("deduplicationId") or ""), {})
         complete.append(item)
-    active_priorities = [item for item in priorities if not (changes.get(str(item.get("findingId") or item.get("id") or ""), {}) or {}).get("suppressed")]
+    def priority_review(item: dict[str, Any]) -> dict[str, Any]:
+        identity = str(item.get("findingId") or item.get("id") or item.get("deduplicationId") or "")
+        if identity:
+            return changes.get(identity, {})
+        # GTM priorities copy source findings with axis metadata but omit the
+        # deduplication ID. Resolve only an exact, unambiguous record match.
+        fields = {key: value for key, value in item.items() if key not in {"axisId", "axisName", "axisScore"}}
+        matches = [finding for finding in complete if fields and all(finding.get(key) == value for key, value in fields.items())]
+        return matches[0]["review"] if len(matches) == 1 else {}
+    active_priorities = [item for item in priorities if not priority_review(item).get("suppressed")]
     summary = machine.get("summary") if isinstance(machine.get("summary"), dict) else {}
     executive = machine.get("executiveSummary") if isinstance(machine.get("executiveSummary"), dict) else {}
     return {"auditId": audit_id, "revisionId": (revision or {}).get("revisionId"), "reviewStatus": (revision or {}).get("reviewStatus", "unreviewed"),
@@ -31,8 +40,9 @@ def render_reviewed_report(context: dict[str, Any]) -> str:
     status = context["reviewStatus"]
     label = "Machine audit — not reviewed" if status == "unreviewed" else status.replace("_", " ").title()
     findings = "".join(
-        f"<article><h3>{esc(item.get('title') or item.get('findingId'))}</h3><p>Machine assessment: {esc(item.get('outcome') or item.get('status'))}</p><p>Rule: {esc(item.get('ruleId'))}; Evidence: {esc(', '.join(item.get('evidenceIds') or []))}</p>"
+        f"<article><h3>{esc(item.get('title') or item.get('findingId') or item.get('deduplicationId'))}</h3><p>Machine assessment: {esc(item.get('outcome') or item.get('status'))}</p><p>Rule: {esc(item.get('ruleId'))}; Evidence: {esc(', '.join(item.get('evidenceIds') or []))}</p>"
         f"<p>Reviewer decision: {esc((item.get('review') or {}).get('reviewDecision'))}</p><p>Reviewer note: {esc((item.get('review') or {}).get('reviewNote'))}</p>"
+        f"<p>Reviewer priority: {esc((item.get('review') or {}).get('priorityOverride'))}</p><p>Reviewed recommendation: {esc((item.get('review') or {}).get('reviewedRecommendation'))}</p>"
         f"<p>{'Suppressed from executive priorities: ' + esc((item.get('review') or {}).get('suppressionReason')) if (item.get('review') or {}).get('suppressed') else ''}</p></article>"
         for item in context["completeFindings"])
     return f"<!doctype html><html><body><header><h1>Audit report</h1><p>Review status: {esc(label)}</p><p>Revision: {esc(context.get('revisionId'))}; Reviewer: {esc(context['reviewer'].get('reviewerId'))}</p></header><section><h2>Executive summary</h2><p>Priority findings: {len(context['priorities'])}</p></section><section><h2>Scope and coverage</h2><p>Collection coverage: {esc(context.get('collectionCoverage'))}; Measurement coverage: {esc(context.get('measurementCoverage'))}</p></section><section><h2>Complete findings</h2>{findings}</section><section><h2>Methodology</h2>{''.join('<p>'+esc(x)+'</p>' for x in context['methodology'])}</section><section><h2>Limitations</h2>{''.join('<p>'+esc(x)+'</p>' for x in context['limitations'])}</section><section><h2>Tool and provenance metadata</h2><pre>{esc(context['tools'])}</pre></section></body></html>"

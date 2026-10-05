@@ -390,9 +390,17 @@ def _snapshot_for_request(job: dict[str, Any], handler: BaseHTTPRequestHandler) 
 
 def _machine_report_context(job_id: str, revision: dict[str, Any] | None) -> tuple[dict[str, Any], str]:
     workspace = AuditWorkspace(job_id, AUDITS_DIR)
+    source_root = AUDITS_DIR
     source = workspace.gtm_audit if workspace.gtm_audit.is_file() else workspace.audit_results
+    job = JOB_STORE.get(job_id) or {}
+    if job.get("inputType") == "screenshot":
+        source_root = SCREENSHOT_AUDIT_DIR
+        source = SCREENSHOT_AUDIT_DIR / job_id / "screenshot_gtm_audit.json"
+    elif job.get("type") == "mobile":
+        source_root = MOBILE_AUDIT_DIR
+        source = MOBILE_AUDIT_DIR / job_id / "mobile_gtm_audit.json"
     try:
-        machine = json.loads(source.read_text(encoding="utf-8"))
+        machine = {} if _contains_symlink(source, source_root) else json.loads(source.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         machine = {}
     from src.report.reviewed_report import render_reviewed_report, reviewed_report_context
@@ -1669,7 +1677,25 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
             payload, status = self._health_payload(ready=True)
             self._send_json(payload, status)
             return
-        if parsed.path == "/" or parsed.path.startswith("/static/") or (not parsed.path.startswith(("/api/", "/audits/", "/artifacts/"))):
+        if parsed.path.startswith("/report/"):
+            parts = [part for part in unquote(parsed.path).split("/") if part]
+            if len(parts) != 2 or parts[0] != "report":
+                self._send_json({"error": "Interactive report not found."}, HTTPStatus.NOT_FOUND)
+                return
+            job_id = parts[1]
+            job = JOB_STORE.get(job_id)
+            if not job:
+                self._send_json({"error": "Audit job not found."}, HTTPStatus.NOT_FOUND)
+                return
+            if str(job.get("status") or "") != "completed":
+                self._send_json({"error": "Interactive reports are available after the audit completes."}, HTTPStatus.CONFLICT)
+                return
+            if not _local_audit_static_path(f"/audits/{quote(job_id, safe='')}/"):
+                self._send_json({"error": "The completed audit has no local report artifact."}, HTTPStatus.NOT_FOUND)
+                return
+            self._send_file(FRONTEND_BUILD_DIR / "index.html")
+            return
+        if parsed.path == "/" or parsed.path.startswith("/report/") or parsed.path.startswith("/static/") or (not parsed.path.startswith(("/api/", "/audits/", "/artifacts/"))):
             if parsed.path == "/":
                 self._send_file(FRONTEND_BUILD_DIR / "index.html")
                 return
@@ -1836,8 +1862,8 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
                     revision = JOB_STORE.get_revision(job_id, revision_id)
                     if not revision:
                         self._send_json({"error": "Review revision not found."}, HTTPStatus.NOT_FOUND); return
-                    if revision["reviewStatus"] not in {"validated", "approved"}:
-                        self._send_json({"error": "Reviewed publication requires a validated revision."}, HTTPStatus.CONFLICT); return
+                    if revision["reviewStatus"] not in {"in_review", "validated", "approved"}:
+                        self._send_json({"error": "Reviewed publication requires a saved revision."}, HTTPStatus.CONFLICT); return
                     publication_type = "reviewed"
                     snapshot = {"auditId": job_id, "revisionId": revision_id, "review": revision}
                 else:

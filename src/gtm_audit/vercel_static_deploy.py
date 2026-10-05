@@ -145,14 +145,20 @@ def package_report_for_vercel(
     return _copy_report_with_assets(report_dir, current_report_dir, asset_root=asset_root)
 
 
-def publish_selected_report(report_dir: Path, *, deployer=None, staging_parent: Path | None = None) -> str:
+def publish_selected_report(
+    report_dir: Path,
+    *,
+    deployer=None,
+    staging_parent: Path | None = None,
+    asset_root: Path | None = None,
+) -> str:
     """Deploy an isolated immutable report copy and always remove temporary staging."""
     deploy = deployer or deploy_to_vercel
     publication_id = secrets.token_hex(24)
     with tempfile.TemporaryDirectory(prefix="uxui-publication-", dir=staging_parent) as temporary:
         staging_root = Path(temporary)
         report_target = staging_root / "audits" / publication_id
-        _copy_report_with_assets(report_dir, report_target)
+        _copy_report_with_assets(report_dir, report_target, asset_root=asset_root)
         url = deploy(
             staging_root,
             production=True,
@@ -353,7 +359,7 @@ def main() -> None:
     if args.deploy:
         if args.preview:
             raise RuntimeError("Preview deployment is disabled for isolated Phase 0 publication.")
-        url = publish_selected_report(report_dir)
+        url = publish_selected_report(report_dir, asset_root=asset_root)
         if not url:
             raise RuntimeError("Vercel deployment completed but no deployment URL was found in CLI output.")
         print(f"Vercel deployment URL: {url}")

@@ -126,6 +126,12 @@ def parse_args() -> argparse.Namespace:
         help="When --mode gtm is used, skip the multimodal vision synthesis layer.",
     )
     parser.add_argument(
+        "--audit-context",
+        choices=("auto", "public_website", "authenticated_workspace"),
+        default="auto",
+        help="Evidence context for synthesis; authenticated runs default to an application workspace.",
+    )
+    parser.add_argument(
         "--deploy-vercel",
         action="store_true",
         help="When --mode gtm is used, package and deploy the generated GTM report to Vercel.",
@@ -139,6 +145,22 @@ def parse_args() -> argparse.Namespace:
         "--vercel-prod",
         action="store_true",
         help="Create a production Vercel deployment and update the production alias.",
+    )
+    parser.add_argument(
+        "--storage-state",
+        default=os.getenv("UX_AUDIT_STORAGE_STATE", ""),
+        help="Optional local Playwright storage state under runtime/auth.",
+    )
+    parser.add_argument(
+        "--auth-login-url",
+        default=os.getenv("UX_AUDIT_AUTH_LOGIN_URL", ""),
+        help="Optional login URL used only to detect expired session state.",
+    )
+    parser.add_argument(
+        "--allowed-dependency-url",
+        action="append",
+        default=[],
+        help="Explicit public dependency origin allowed only for this audit (repeatable).",
     )
     return parser.parse_args()
 
@@ -178,6 +200,13 @@ def run_pipeline(args: argparse.Namespace) -> None:
     html_cleaned = workspace.html_cleaned
     rendered_ui = workspace.rendered_ui
     audit_results = workspace.audit_results
+    storage_state = str(getattr(args, "storage_state", "") or "").strip()
+    auth_login_url = str(getattr(args, "auth_login_url", "") or "").strip()
+    allowed_dependency_urls = [
+        str(value).strip()
+        for value in (getattr(args, "allowed_dependency_url", []) or [])
+        if str(value).strip()
+    ]
 
     print(f"Audit job ID: {workspace.job_id}")
     print(f"Audit workspace: {workspace.root}")
@@ -193,6 +222,12 @@ def run_pipeline(args: argparse.Namespace) -> None:
         env_int("WEBSITE_CRAWLER_PAGE_TIMEOUT_SEC", 12),
     ]
     crawler_args.extend(["--locale", os.getenv("UX_AUDIT_LOCALE", "auto"), "--robots-policy", os.getenv("UX_AUDIT_ROBOTS_POLICY", "respect")])
+    if storage_state:
+        crawler_args.extend(["--storage-state", storage_state])
+        if auth_login_url:
+            crawler_args.extend(["--auth-login-url", auth_login_url])
+    for dependency_url in allowed_dependency_urls:
+        crawler_args.extend(["--allowed-dependency-url", dependency_url])
     if env_flag("UX_AUDIT_INCLUDE_AUTH_PAGES", False):
         crawler_args.append("--include-auth-pages")
     if env_flag("CRAWLER_USE_AI_NAV") or env_flag("USE_AI_NAV"):
@@ -208,7 +243,14 @@ def run_pipeline(args: argparse.Namespace) -> None:
     validate_crawler_output(website_menu)
 
     print("\n[2/5] Running page audit...\n")
-    run_command([sys.executable, "-m", "src.main", "--job-id", workspace.job_id], cwd=ROOT_DIR)
+    page_audit_args = [sys.executable, "-m", "src.main", "--job-id", workspace.job_id]
+    if storage_state:
+        page_audit_args.extend(["--storage-state", storage_state])
+        if auth_login_url:
+            page_audit_args.extend(["--auth-login-url", auth_login_url])
+    for dependency_url in allowed_dependency_urls:
+        page_audit_args.extend(["--allowed-dependency-url", dependency_url])
+    run_command(page_audit_args, cwd=ROOT_DIR)
 
     ensure_file_exists(html_cleaned)
     ensure_file_exists(rendered_ui)
@@ -225,11 +267,18 @@ def run_pipeline(args: argparse.Namespace) -> None:
         rendered_ui,
         "--output",
         checks_output,
+        "--evidence-manifest",
+        workspace.evidence_manifest,
     ]
+    audit_context = getattr(args, "audit_context", "auto")
+    if audit_context == "auto":
+        audit_context = "authenticated_workspace" if storage_state else "public_website"
+    checks_args.extend(["--audit-context", audit_context])
     checks_args.extend(["--results", audit_results])
     run_command(checks_args, cwd=ROOT_DIR)
 
     ensure_file_exists(checks_output)
+    ensure_file_exists(workspace.evidence_manifest)
 
     workbook_for_report = ""
     if args.mode == "detailed":
@@ -298,6 +347,7 @@ def run_pipeline(args: argparse.Namespace) -> None:
         ]
         gtm_args.extend(["--results", audit_results])
         gtm_args.extend(["--coverage", workspace.coverage_manifest])
+        gtm_args.extend(["--audit-context", audit_context])
         if args.skip_vision:
             gtm_args.append("--skip-vision")
         run_command(gtm_args, cwd=ROOT_DIR)

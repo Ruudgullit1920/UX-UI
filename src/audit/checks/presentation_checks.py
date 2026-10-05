@@ -455,6 +455,10 @@ def check_responsive_desktop_mobile(html_data: Dict[str, Any]) -> List[Dict[str,
         signals = mobile.get("responsiveSignals") if isinstance(mobile.get("responsiveSignals"), dict) else {}
         overflow_px = int(signals.get("overflowPx") or max(0, scroll_width - viewport_width))
         overflowing_elements = signals.get("overflowingElements") if isinstance(signals.get("overflowingElements"), list) else []
+        clipped_interactive = [
+            item for item in overflowing_elements
+            if isinstance(item, dict) and str(item.get("tag") or "").lower() in {"a", "button", "input", "select", "textarea", "summary"}
+        ]
         tiny_text_count = int(signals.get("tinyTextCount") or 0)
         has_mobile_navigation = bool(signals.get("hasMobileNavigationControl"))
 
@@ -465,9 +469,14 @@ def check_responsive_desktop_mobile(html_data: Dict[str, Any]) -> List[Dict[str,
             "mobileScreenshotPath": mobile.get("screenshotPath") or "",
             "mobileOverflowPx": overflow_px,
             "overflowingElements": overflowing_elements[:5],
+            "elementOutsideViewportCount": len(overflowing_elements),
+            "clippedInteractiveContent": clipped_interactive[:5],
             "tinyTextCount": tiny_text_count,
             "hasMobileNavigationControl": has_mobile_navigation,
         }
+        # Document width can equal the viewport even while flex rows clip
+        # controls at the right edge.  Treat either condition as evidence,
+        # and preserve the distinction in the artifact/report.
         if overflow_px > tolerance_px or overflowing_elements:
             failing_pages.append(page_evidence)
         elif tiny_text_count >= 12 or not has_mobile_navigation:
@@ -514,8 +523,8 @@ def check_responsive_desktop_mobile(html_data: Dict[str, Any]) -> List[Dict[str,
                 criterion="responsive-desktop-mobile",
                 status="fail",
                 severity="high",
-                title="Website does not adapt reliably to phone screens",
-                description="One or more audited pages overflow the phone viewport, which indicates the desktop layout is not fully responsive.",
+                title="Phone viewport contains clipped or off-screen interface content",
+                description="One or more audited pages have document overflow or visible elements extending outside the phone viewport; both can make controls unavailable on a phone.",
                 pages=[{k: p[k] for k in ("name", "url", "finalUrl")} for p in failing_pages],
                 recommendation="Fix fixed-width sections, oversized media, absolute-positioned blocks, and containers wider than the viewport at phone breakpoints.",
                 evidence={
@@ -524,7 +533,7 @@ def check_responsive_desktop_mobile(html_data: Dict[str, Any]) -> List[Dict[str,
                     "tolerancePx": tolerance_px,
                 },
                 confidence="high",
-                method=["responsive-viewport-comparison", "document-metrics"],
+                method=["responsive-viewport-comparison", "document-metrics", "element-bounds"],
             )
         ]
 

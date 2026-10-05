@@ -200,7 +200,9 @@ async def collect_keyboard_accessibility_snapshot(page, max_tabs: int = 80):
         focused = []
         seen = set()
         weak_focus = []
-        for _ in range(max(1, min(max_tabs, 160))):
+        tab_budget = max(1, min(max_tabs, 160))
+        termination_reason = "tab_budget_exhausted"
+        for _ in range(tab_budget):
             await page.keyboard.press("Tab")
             item = await page.evaluate(
                 """
@@ -233,7 +235,9 @@ async def collect_keyboard_accessibility_snapshot(page, max_tabs: int = 80):
                     outlineWidth,
                     boxShadow: boxShadow.slice(0, 120),
                     rect: { x: Math.round(rect.x), y: Math.round(rect.y), width: Math.round(rect.width), height: Math.round(rect.height) },
-                    fingerprint: [el.tagName.toLowerCase(), clean(el.getAttribute('role')), name, clean(el.getAttribute('href')), clean(el.id)].join('|')
+                    // DOM index makes same-labelled repeated controls distinct;
+                    // without it, a second “Delete” could look like a focus cycle.
+                    fingerprint: [el.tagName.toLowerCase(), clean(el.getAttribute('role')), name, clean(el.getAttribute('href')), clean(el.id), Array.from(document.querySelectorAll('*')).indexOf(el)].join('|')
                   };
                 }
                 """
@@ -242,6 +246,7 @@ async def collect_keyboard_accessibility_snapshot(page, max_tabs: int = 80):
                 continue
             key = item.get("fingerprint")
             if key in seen:
+                termination_reason = "focus_cycle_detected"
                 break
             seen.add(key)
             focused.append(item)
@@ -255,9 +260,12 @@ async def collect_keyboard_accessibility_snapshot(page, max_tabs: int = 80):
             "unfocusedSamples": [item for item in (interactive or []) if item.get("fingerprint") not in seen][:8],
             "weakFocusSamples": weak_focus[:8],
             "focusedSamples": focused[:12],
+            "tabBudget": tab_budget,
+            "terminationReason": termination_reason,
             "limitations": [
                 "This is a tab-order probe in Chromium, not a full screen-reader audit.",
                 "Keyboard activation of every focused control is not attempted during this probe.",
+                "A focus cycle can be caused by the page, browser chrome, or the probe reset; inspect terminationReason before treating coverage as an accessibility defect.",
             ],
         }
     except Exception as error:

@@ -1,1 +1,21 @@
-main { max-width:980px; margin:0 auto; padding:var(--space-3); } header { margin-bottom:var(--space-2); } .card { background:var(--color-surface); border-radius:var(--radius); box-shadow:var(--shadow); padding:var(--space-2); margin:var(--space-2) 0; } .actions { display:flex; flex-wrap:wrap; gap:var(--space-1); margin-top:var(--space-2); }
+.topbar { position: sticky; top: 0; z-index: 20; background: var(--color-chrome); border-bottom: 1px solid var(--color-line); backdrop-filter: blur(18px); }
+.topbar-inner { max-width: 1200px; min-height: 76px; padding: 0 var(--space-6); margin: auto; display: flex; align-items: center; gap: var(--space-7); }
+.brand { display: flex; align-items: center; gap: 11px; font-size: .95rem; white-space: nowrap; letter-spacing: -.025em; }
+.brand-mark { display: grid; place-items: center; width: 32px; height: 32px; border: 1.5px solid var(--color-text); border-radius: 10px; }
+.brand strong { font-weight: 650; }
+.topbar nav { display: flex; align-items: center; gap: 4px; flex: 1; }
+.nav-item { font-size: .82rem; font-weight: 550; border: 0; border-radius: var(--radius-sm); color: var(--color-muted); background: transparent; padding: 10px 14px; min-height: 44px; }
+.nav-item:hover, .nav-item.is-active { color: var(--color-text); background: var(--color-subtle); }
+main { max-width: 1200px; min-height: calc(100vh - 160px); margin: auto; padding: 54px var(--space-6) var(--space-8); }
+.page-heading { margin-bottom: 38px; }
+.page-heading h1 { margin-bottom: 14px; }
+.page-heading > p:last-child { font-size: .98rem; max-width: 650px; }
+.app-footer { max-width: 1200px; margin: auto; padding: 20px var(--space-6); border-top: 1px solid var(--color-line); display: flex; justify-content: space-between; gap: var(--space-5); color: var(--color-faint); font-size: .72rem; }
+.workspace-heading { display: flex; justify-content: space-between; gap: var(--space-5); align-items: center; margin-bottom: var(--space-6); }
+.workspace-heading > div { min-width: 0; }
+.workspace-heading h1 { font-size: clamp(1.6rem, 3vw, 2.2rem); overflow-wrap: anywhere; }
+.workspace-heading p:last-child { font-size: .8rem; margin-top: var(--space-3); }
+.workspace-heading .button { flex-shrink: 0; }
+@media (max-width: 1024px) { main { padding-top: 38px; } .topbar-inner { gap: var(--space-5); } }
+@media (max-width: 768px) { .topbar-inner { padding: 0 20px; } main { padding: 32px 20px 48px; } .app-footer { padding-inline: 20px; } .page-heading { margin-bottom: 28px; } }
+@media (max-width: 600px) { .topbar-inner { min-height: 68px; flex-wrap: wrap; gap: 8px 14px; padding: 12px 16px; } .brand { flex: 1; } .topbar nav { order: 3; flex-basis: 100%; } main { padding: 28px 16px 40px; } .workspace-heading { align-items: flex-start; flex-direction: column; } .app-footer { padding-inline: 16px; } .app-footer > span:last-child { display: none; } .page-heading > p:last-child { font-size: .9rem; } }

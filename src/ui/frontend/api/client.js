@@ -33,7 +33,7 @@ export function createApiClient({ normalizeBaseUrl, configuredBaseUrl, isCrossOr
       if (response.status === 401 || response.status === 403) window.dispatchEvent(new CustomEvent("uxui:authorization-failed", { detail: { status: response.status } }));
       return response;
     } catch (_error) {
-      throw new ApiError(`Unable to reach backend API at ${baseUrl(configured) || window.location.origin}. Confirm the Python server is running and update the Backend API URL in this form.`);
+      throw new ApiError("Unable to reach the audit server. Check your connection and try again.");
     }
   }
 

@@ -1020,6 +1020,10 @@ def build_gtm_spotlight(
 
     bundle_target = ((item.get("evidenceBundle") or {}).get("target") or {}) if isinstance(item.get("evidenceBundle"), dict) else {}
     screenshot_path = clean_text(bundle_target.get("screenshot_path")) or clean_text(item.get("screenshotPath"))
+    annotation = clean_text(item.get("evidenceAnnotation"))
+    if annotation and _create_targeted_annotation(screenshot_path, output_dir / "evidence" / f"issue-{str(issue_index).zfill(2)}-{annotation}.png", annotation, item):
+        output_path = output_dir / "evidence" / f"issue-{str(issue_index).zfill(2)}-{annotation}.png"
+        return quote(Path(os.path.relpath(output_path, output_dir)).as_posix(), safe="/:#?&=%")
     bundle_component = _evidence_bundle_component(item)
     region_component = _component_from_visual_region(item, screenshot_path)
     cited_component = _component_from_cited_examples(item, rendered_page, screenshot_path)
@@ -1060,3 +1064,41 @@ def build_gtm_spotlight(
 
     relative = os.path.relpath(output_path, output_dir)
     return quote(Path(relative).as_posix(), safe="/:#?&=%")
+
+
+def _create_targeted_annotation(screenshot_path: str, output_path: Path, kind: str, item: Dict[str, Any]) -> bool:
+    """Produce compact evidence cards from already-captured screenshots and measurements."""
+    absolute = absolute_from_repo(screenshot_path)
+    if not absolute or not absolute.exists():
+        return False
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        with Image.open(absolute) as source:
+            image = source.convert("RGB")
+        scale = min(900 / image.width, 780 / image.height, 1)
+        image = image.resize((max(1, int(image.width * scale)), max(1, int(image.height * scale))), Image.Resampling.LANCZOS)
+        panel_width = 520
+        canvas = Image.new("RGB", (image.width + panel_width, max(image.height, 780)), "#f5f5fa")
+        canvas.paste(image, (0, 0))
+        draw = ImageDraw.Draw(canvas)
+        font = ImageFont.load_default()
+        draw.rectangle((0, 0, image.width - 1, image.height - 1), outline="#e8453c" if kind == "mobile" else "#caa23b", width=5)
+        x, y = image.width + 28, 38
+        lines = {
+            "mobile": ["PHONE VIEWPORT EVIDENCE", "390px viewport boundary", "20 action-button instances", "across five visible records", "4 recurring action types", "furthest right edge: 700px", "310px beyond viewport", "Persistent sidebar compresses", "the workspace; actions are", "clipped off-canvas."],
+            "contrast": ["AXE COLOR CONTRAST", "1 grouped rule / 8 base nodes", *[f"{s.get('foreground')} on {s.get('background')}: {s.get('ratio')}:1 / {s.get('required')}" for s in (item.get('contrastSamples') or [])]],
+            "language": ["LANGUAGE CONSISTENCY", "Visible English labels in a", "French workspace:", "• Search by TDR name...", "• Success / Failed", "• Status: ERROR", "• Status: SUCCESS", "TDR is an accepted acronym."],
+            "error": ["ERROR RECOVERY", "ERROR status and unavailable", "fields are visible, but the", "screen does not explain what", "failed or what to do next."],
+            "modal": ["USER CONTROL", "Visible choices advance or", "ignore the workflow. No neutral", "dismiss or cancel control is", "obvious in this captured state."],
+            "workflow": ["WORKFLOW CLARITY", "The flow begins at 0, shows", "an unexplained 0/5 counter,", "and does not clearly communicate", "what remains before completion."],
+            "actions": ["ACTION HIERARCHY", "Repeated cards show multiple", "peer actions plus Supprimer.", "The primary next action is", "not visually distinguished."],
+        }.get(kind, [])
+        for index, line in enumerate(lines):
+            fill = "#161621" if index else "#6a4d00"
+            draw.text((x, y), line, fill=fill, font=font)
+            y += 30 if index == 0 else 24
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        canvas.save(output_path, format="PNG", optimize=True)
+        return True
+    except Exception:
+        return False

@@ -1,52 +1,61 @@
 # UX Specification
 
-**Status:** Current implemented flows plus explicitly labeled recommendations
-**Repository baseline:** `main @ b49d8ac0ca9b89da97629c734fa50d5245b5420b`
-**Last updated:** 2026-09-11
-**Audience:** UX/UI specialists, product stakeholders, frontend engineers, and reviewers
-**Scope:** User workflow in the current React application; product behavior remains authoritative in [Product Specification](PRODUCT-SPECIFICATION.md).
-**Related documents:** [Product Specification](PRODUCT-SPECIFICATION.md), [Content Guidelines](CONTENT-GUIDELINES.md), [Accessibility](ACCESSIBILITY.md), [API Specification](API-SPECIFICATION.md).
+**Implemented:** 2026-09-25 · React/Vite application
+Related: [Product](PRODUCT-SPECIFICATION.md), [Design system](DESIGN-SYSTEM.md), [Accessibility](ACCESSIBILITY.md), [API](API-SPECIFICATION.md).
 
-## Current implemented experience
+## Shell and creation
 
-The launcher is a single-page React interface with an audit-type selector, mode-specific inputs, audit progress, result links, and a structured-review panel. It serves UX/UI specialists who create audits and product stakeholders who consume reports; authenticated admins additionally manage criteria through the API. The design favors visible state, evidence-aware reporting, and explicit review/publishing rather than silent automation.
+Global navigation contains New audit and, once a job exists, Current audit. System/Light/Dark appearance persists locally. There is no invented audit-history page. Switching views preserves the current job, filters, selection and review draft in memory. Reload does not restore them. Leaving with a draft uses the browser warning; replacing it asks for confirmation before creating the next job.
 
-```mermaid
-flowchart LR
-  A[Select audit type] --> B[Enter mode-specific input]
-  B --> C[Start audit]
-  C --> D[Queued/running progress polling]
-  D --> E[Completed result links]
-  E --> F[Structured review]
-  F --> G[Validate or approve]
-  G --> H[Publish reviewed report]
-```
+New audit uses a compact heading and four native radio source cards. Website requires a public HTTP(S) URL; detailed mode appears under Advanced only when capabilities explicitly enables it. Screenshots accept the existing upload flow, filename/removal list, optional name and screen type. Mobile exposes its Appium/ADB requirement, discovery, package/activity and advanced connection settings. Figma requires its file URL and server-side access. The server retains all URL, upload and ownership validation. A running job must finish or be cancelled before another is created through this workspace.
 
-## Primary journeys
+## Audit workspace
 
-| Journey | Current interface flow | Boundary/limitation |
-| --- | --- | --- |
-| Website | Select Website, enter a required URL, use the visible `Website audit` mode, then start and poll progress. | The UI exposes only `gtm`; detailed mode is an API capability subject to a workbook template. Sampling is representative, not a full crawl. |
-| Screenshot | Select Screenshots, optionally name the audit, choose one or more PNG/JPEG/WebP files, then submit multipart input. | Server-enforced limits/errors apply; supplied Render disables this mode. |
-| Figma | Select Figma and enter a required Figma URL. | Requires configured authorization and cannot prove runtime behavior. |
-| Android/mobile | Select Mobile and enter app package, activity, and Appium URL. | Requires local Appium/device runtime; supplied Render disables it. |
+The heading identifies source, target, creation time and actual job status. A completedAt timestamp is displayed only if supplied; updatedAt is labelled Last update inside details, never invented as a completion time. Queued/running views show real stage text, indeterminate progress, cancellation and live status. Polling continues after cancellation is requested until a terminal response arrives. Failed/cancelled/interrupted states offer recovery and real error details. Logs and full audit ID remain collapsed.
 
-After submission, the interface renders the current `status` and `stage`, polling every 1.5 seconds until `completed`, `failed`, or `cancelled`. A non-terminal job exposes **Cancel audit**. Terminal result UI shows the server-provided error/stage/status and may link to report/artifacts.
+Completed jobs expose local Overview, Findings and Review tabs. Arrow keys, Home and End operate these tabs. Report and source-artifact buttons remain available above them. There is no separate Evidence tab: useful evidence is attached to findings and collection scope.
 
-The review panel loads for any created job, shows machine-unreviewed/review status, accepts structured JSON changes, lists revision IDs, and exposes **Save revision**, **Validate**, **Approve**, and **Publish reviewed report**. Server-side rules determine valid transitions and ownership; publication remains a distinct action.
+## Overview
 
-## Current feedback and friction
+The overview displays the source report's overall score, measurement coverage and summary. Dimension rows place scores beside independent coverage figures; opening a row reveals available confidence, rule counts, missing context and reasons. Null/unscored measurements display Not measured. Numeric zero remains zero. Model visual assessments are explicitly separate from measured scores. The five current methodology axes keep their actual report names; historical reports retain historical axes rather than being relabelled.
 
-Implemented feedback includes disabled **Starting…** submission, form-native required/type validation, top-level alert errors, progress text, cancellation, review loading, and conflict wording. The frontend has no dedicated empty-state, unavailable-feature, or permission-specific surface beyond returned error text. `interrupted` is a persisted job state but is not terminal in the frontend polling/result lists; this is a current UX gap, not an intended flow.
+Findings counts and severity distributions use the canonical structured collection. Selecting a severity opens a filtered findings view. Review decision counts include the current local draft, labelled as such; no decision is a separate state. Collection scope uses reported page counts/coverage, captured-page lists, or Figma extraction counts where available. Collection coverage and measurement coverage have separate explanations. Absent report data produces an unavailable state rather than fabricated scores or totals.
 
-## Recommended / not current behavior
+## Findings and evidence
 
-| Priority | Recommendation | Evidence for need |
-| --- | --- | --- |
-| High | Treat `interrupted` as a terminal visible outcome with retry/support guidance. | Current poller/results handle only completed, failed, cancelled. |
-| High | Surface mode availability before submission and explain Render-disabled screenshot/mobile modes. | Availability is server/deployment behavior, not a launcher state. |
-| Medium | Replace raw structured-JSON editing with guided finding controls while retaining revision semantics. | Current panel exposes a textarea labeled `Finding changes (structured JSON)`. |
-| Medium | Add explicit progress semantics and accessible status announcements. | Current progress is plain text, without a live region. |
-| Low | Add purposeful empty/help states and clearer mode-specific constraints near inputs. | Current form relies largely on native validation and returned errors. |
+Desktop/tablet use two panes: findings navigation and a readable selected finding. Both have bounded scrolling at 768px and above. Below 768px the list drills into the selected detail, with an explicit Back to findings control and focus restoration.
 
-These are recommendations only; no delivery date or product approval is implied.
+Search covers titles, IDs, page URLs and evidence. Severity, dimension and review-decision filters appear only when their real values provide useful choices. Search/filters are omitted for one finding. Filters and selection survive local tab switches. Lists initially render 25 entries; Show next 25 reveals another batch, adequate for the tested 100-finding workload.
+
+The detail separates observation/evidence, machine interpretation, impact, recommendation and human review. Available page URLs link out safely. The first supported screenshot reference is previewed using an authenticated blob; referenced paths must belong to this audit under existing protected artifact roots. Missing/unsupported images have an explicit fallback. Provenance exposes supplied evidence IDs, sources, selectors, criteria, measurement class, raw checks, visual region and limitations. The full original finding record remains available in a disclosure. No AI interpretation is labelled human-authored or raw measurement.
+
+## Review inspector and actions
+
+Review reuses the selected finding and its evidence. Machine interpretation is available in a disclosure. Decision, priority override and note are directly editable; reviewed recommendation and executive-priority suppression are disclosed on demand. Suppression requires a reason. Findings without stable IDs are read-only. Figma final issues are browsable but read-only because the revision/report adapter does not support that format. Draft Figma detection counts are identified separately and remain inspectable in the source artifact.
+
+Edits follow the server schema: reviewDecision, priorityOverride, reviewNote, reviewedRecommendation, suppressed and suppressionReason. Text limits remain 1,200 characters, revision reason 1,000, and revisions contain 1–100 finding changes. Saving retains the full current set of review fields across findings.
+
+The sticky action area shows draft/saved state, revision state and the primary next action:
+- Edited draft → Save revision.
+- Saved in_review → Validate revision.
+- Validated/approved → Publish reviewed report.
+- Approval is optional and secondary when validated.
+- Publication success retains its returned link; new edits create another revision.
+
+Each failure owns its action independently from pending state. Save/validate/approve/publish errors are specific and dismissible. Successful mutations and relevant draft changes clear obsolete errors. A failed read after a successful mutation is labelled as a refresh problem, preserving the successful mutation response. Brief success feedback expires after six seconds. Busy actions disable duplicate requests and editing.
+
+HTTP 409 preserves drafts and blocks transitions. Reviewers refresh and explicitly choose the latest revision or retain their draft. A different current revision observed during a post-mutation refresh also blocks further writes. No silent merge or overwrite occurs. Publication refreshes revision and job state; responses from an unmounted workspace cannot replace a newer job.
+
+History is collapsed by default, showing real revision state, current marker, timestamps and reason, with IDs and changes on demand. Publication invokes the existing immutable snapshot service; machine scores and evidence remain unchanged.
+
+## Reports, contracts and limits
+
+Authenticated report opening embeds local protected image/style/script assets into a sandboxed new-tab viewer, isolating report scripts from session credentials. Source JSON opens through the protected artifact endpoint. Popup, authorization and missing-resource errors are explicit.
+
+No API routes or dependencies were added. The earlier source compatibility fixes support website deduplicated findings and screenshot/mobile report locations. Priorities without IDs are associated only through exact, unambiguous source matches.
+
+Unavailable product information is not invented: audit history/trends, assignment and collaboration presence, persisted drafts, overall confidence for every source, universal completion timestamps, full capability/upload-limit discovery, cross-source measurement coverage and publication-history listings. A report's canonical finding count can differ from axis pain-point totals; the UI does not recompute the engine's deduplication. Figma drafts are not promoted to final findings.
+
+## Verification
+
+Browser tests run the built application against the authenticated local server with isolated test jobs. Audit execution and external publication are fixture-controlled; authentication, artifact ownership, revision transitions and storage use the real handlers. Tests cover creation, lifecycle, reports, evidence, filtering, 1/15/100 findings, review errors/conflicts, publication, responsive layout and keyboard interaction. See Accessibility for the verification boundary.

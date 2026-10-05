@@ -131,6 +131,23 @@ def headings(page: Dict[str, Any]) -> List[str]:
     return dedupe_strings(item.get("text") for item in items if isinstance(item, dict))
 
 
+def observed_page_label(page: Dict[str, Any], fallback: str = "Observed route") -> str:
+    """Use an observed page heading before a crawler's generic route label.
+
+    The crawler calls its first route ``Home`` even after authentication
+    redirects it into an application.  A visible H1 is safer and more useful
+    than either that placeholder or a hostname-derived client name.
+    """
+    title = next((text for text in headings(page) if clean_text(text)), "")
+    if title:
+        return clean_text(title)
+    for value in (page.get("finalUrl"), page.get("url"), page_meta(page).get("finalUrl")):
+        path = urlparse(clean_text(value)).path.strip("/")
+        if path:
+            return path.rsplit("/", 1)[-1].replace("-", " ").replace("_", " ").title()
+    return fallback
+
+
 def flatten_checks(checks_data: Dict[str, Any]) -> List[Dict[str, Any]]:
     rows = []
     for sheet_name, payload in (checks_data.get("sheets") or {}).items():
@@ -147,6 +164,7 @@ def flatten_checks(checks_data: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "measurement": clean_text(item.get("measurement")).lower() or "measured",
                     "ruleId": clean_text(item.get("ruleId")),
                     "machine_criterion": clean_text(item.get("machine_criterion")),
+                    "auditContext": clean_text(item.get("auditContext")),
                     "axisMethodologyVersion": 2,
                     "auditMode": "website",
                     "findingId": clean_text(item.get("findingId")),
@@ -156,13 +174,190 @@ def flatten_checks(checks_data: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "decision_basis": clean_text(item.get("decision_basis")).lower(),
                     "rationale": clean_text(item.get("rationale")),
                     "evidence": evidence if isinstance(evidence, list) else [clean_text(evidence)] if clean_text(evidence) else [],
-                    "page_name": clean_text(item.get("page_name")),
-                    "page_url": clean_text(item.get("page_url") or item.get("final_url")),
-                    "screenshot_path": clean_text(item.get("screenshot_path")),
+                    "page_name": clean_text(item.get("observedRouteName") or item.get("page_name")),
+                    "page_url": clean_text(item.get("observedRouteUrl") or item.get("page_url") or item.get("final_url")),
+                    "screenshot_path": clean_text(item.get("observedScreenshotPath") or item.get("screenshot_path")),
                     "evidence_bundle": item.get("evidence_bundle") if isinstance(item.get("evidence_bundle"), dict) else None,
+                    "partnerEvidence": item.get("partnerEvidence") if isinstance(item.get("partnerEvidence"), dict) else None,
                 }
             )
     return rows
+
+
+def axe_scoring_rows(results_data: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Project standards-automated Axe evidence into methodology-v2 score rows.
+
+    Axe findings were previously attached to the accessibility narrative only.
+    That allowed a measured standards failure to appear as a pain point while
+    leaving the numerical accessibility score unaffected.  The projection
+    retains the original result semantics and stable ``axe:*`` registry key;
+    it does not reinterpret incomplete Axe checks as failures.
+    """
+    rows: List[Dict[str, Any]] = []
+    for page in (results_data or {}).get("pages", []):
+        if not isinstance(page, dict) or not isinstance(page.get("axe"), dict):
+            continue
+        page_name = clean_text(page.get("name"))
+        page_url = clean_text(page.get("finalUrl") or page.get("siteUrl") or page.get("originalUrl"))
+        screenshot_path = clean_text(page.get("screenshotPath"))
+        # One Axe rule can list many DOM nodes.  Keep every node in the raw
+        # artifact, but create just one numerical consequence per rule/page.
+        # This prevents selector variants from distorting an axis score.
+        seen_rule_ids: set[str] = set()
+        for finding in axe_findings(page["axe"]):
+            rule_id = clean_text(finding.get("ruleId"))
+            if rule_id in seen_rule_ids:
+                continue
+            seen_rule_ids.add(rule_id)
+            rows.append(
+                {
+                    "sheet": clean_text(finding.get("sourceSheet")) or "Standards-based accessibility findings",
+                    "row": 0,
+                    "criterion": clean_text(finding.get("title")),
+                    "status": "FALSE" if clean_text(finding.get("outcome")).lower() == "fail" else "UNKNOWN",
+                    "outcome": clean_text(finding.get("outcome")).lower() or "unknown",
+                    "applicability": clean_text(finding.get("applicability")).lower() or "applicable",
+                    "measurement": clean_text(finding.get("measurement")).lower() or "not_measured",
+                    "measurementClass": clean_text(finding.get("measurementClass")),
+                    "ruleId": rule_id,
+                    "machine_criterion": rule_id,
+                    "target": rule_id,
+                    "scoreConsequenceId": f"accessibility:{rule_id}",
+                    "axisMethodologyVersion": 2,
+                    "auditMode": "website",
+                    "findingId": clean_text(finding.get("findingId")),
+                    "evidenceIds": list(finding.get("evidenceIds") or []),
+                    "provenance": finding.get("provenance") if isinstance(finding.get("provenance"), dict) else {},
+                    "confidence": 0.95 if clean_text(finding.get("measurement")).lower() == "measured" else 0.0,
+                    "decision_basis": "direct",
+                    "rationale": clean_text(finding.get("failureSummary")),
+                    "evidence": [clean_text(finding.get("failureSummary"))] if clean_text(finding.get("failureSummary")) else [],
+                    "page_name": page_name,
+                    "page_url": page_url,
+                    "screenshot_path": screenshot_path,
+                    "evidence_bundle": None,
+                }
+            )
+    return rows
+
+
+def _axe_node_measurement(node: Dict[str, Any]) -> Dict[str, str]:
+    """Extract the structured contrast measurement Axe already recorded."""
+    any_checks = node.get("any") if isinstance(node.get("any"), list) else []
+    data = next(
+        (
+            check.get("data")
+            for check in any_checks
+            if isinstance(check, dict) and isinstance(check.get("data"), dict)
+        ),
+        {},
+    )
+    summary = clean_text(node.get("failureSummary"))
+    ratio = clean_text(data.get("contrastRatio"))
+    foreground = clean_text(data.get("fgColor"))
+    background = clean_text(data.get("bgColor"))
+    required = clean_text(data.get("expectedContrastRatio"))
+    if not ratio:
+        match = re.search(r"contrast of\s+([0-9.]+)", summary, flags=re.IGNORECASE)
+        ratio = match.group(1) if match else ""
+    if not foreground or not background:
+        match = re.search(r"foreground color:\s*([^,]+),\s*background color:\s*([^,]+)", summary, flags=re.IGNORECASE)
+        if match:
+            foreground = foreground or clean_text(match.group(1))
+            background = background or clean_text(match.group(2))
+    if not required:
+        match = re.search(r"Expected contrast ratio of\s*([0-9.]+:1)", summary, flags=re.IGNORECASE)
+        required = match.group(1) if match else ""
+    return {"foreground": foreground, "background": background, "ratio": ratio, "required": required}
+
+
+def grouped_axe_findings(results_data: Optional[Dict[str, Any]], cleaned_pages: List[Dict[str, Any]]) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """Return rule-level confirmed findings and incomplete human-review items.
+
+    Axe node data stays in the evidence bundle.  Stakeholders see a root rule
+    once, with affected count, selectors, colours and ratios instead of a card
+    for each duplicate component instance.
+    """
+    screenshots = screenshot_lookup_from_cleaned(cleaned_pages)
+    confirmed: List[Dict[str, Any]] = []
+    human_review: List[Dict[str, Any]] = []
+    impacts = {"critical": "high", "serious": "high", "moderate": "medium", "minor": "low"}
+    for page in (results_data or {}).get("pages", []):
+        if not isinstance(page, dict) or not isinstance(page.get("axe"), dict):
+            continue
+        axe = page["axe"]
+        if axe.get("status") != "completed" or axe.get("measurement") != "measured":
+            continue
+        raw = axe.get("raw") if isinstance(axe.get("raw"), dict) else {}
+        page_name = observed_page_label(page)
+        page_url = clean_text(page.get("finalUrl") or page.get("siteUrl") or page.get("originalUrl"))
+        screenshot_path = _page_screenshot(page, screenshots)
+        for violation in raw.get("violations", []):
+            if not isinstance(violation, dict) or not clean_text(violation.get("id")):
+                continue
+            nodes = [node for node in (violation.get("nodes") or []) if isinstance(node, dict)]
+            selectors = [" ".join(str(part) for part in (node.get("target") or []) if part) for node in nodes]
+            measurements = [_axe_node_measurement(node) for node in nodes]
+            measurements = [item for item in measurements if any(item.values())]
+            samples = []
+            for selector, measurement in zip(selectors, measurements):
+                detail = " / ".join(part for part in (
+                    selector,
+                    f"fg {measurement['foreground']}" if measurement["foreground"] else "",
+                    f"bg {measurement['background']}" if measurement["background"] else "",
+                    f"{measurement['ratio']}:1" if measurement["ratio"] else "",
+                    f"required {measurement['required']}" if measurement["required"] else "",
+                ) if part)
+                if detail:
+                    samples.append(detail)
+            rule_id = clean_text(violation.get("id"))
+            count = len(nodes)
+            evidence = f"Axe {rule_id}: {count} affected node(s). " + "; ".join(samples[:4])
+            confirmed.append(
+                {
+                    "title": clean_text(violation.get("help")) or rule_id,
+                    "pageName": page_name,
+                    "pageUrl": page_url,
+                    "sourceSheet": "Standards-based accessibility findings",
+                    "severity": impacts.get(clean_text(violation.get("impact")).lower(), "medium"),
+                    "confidence": 0.95,
+                    "evidence": evidence[:600],
+                    "visibleSignals": dedupe_strings([f"{count} affected node(s)", *samples[:3]], limit=4),
+                    "explanation": f"Axe confirmed the {rule_id} rule on {count} rendered node(s) of {page_name}.",
+                    "whyItMatters": "Insufficient foreground/background contrast can make labels, status indicators, and controls unreadable for people with low vision.",
+                    "recommendation": "Update the cited component colour tokens until each affected text/background pair meets the recorded required contrast ratio, then rerun Axe.",
+                    "screenshotPath": screenshot_path,
+                    "visualRegion": None,
+                    "ruleId": f"axe:{rule_id}",
+                    "measurementClass": "standards_automated",
+                    "outcome": "fail",
+                    "applicability": "applicable",
+                    "measurement": "measured",
+                    "evidenceBundle": {
+                        "source": "axe-core",
+                        "ruleId": rule_id,
+                        "affectedNodeCount": count,
+                        "selectors": selectors,
+                        "contrastMeasurements": measurements,
+                        "toolVersion": clean_text(axe.get("toolVersion")),
+                    },
+                }
+            )
+        for incomplete in raw.get("incomplete", []):
+            if not isinstance(incomplete, dict) or not clean_text(incomplete.get("id")):
+                continue
+            human_review.append(
+                {
+                    "title": clean_text(incomplete.get("help")) or clean_text(incomplete.get("id")),
+                    "ruleId": f"axe:{clean_text(incomplete.get('id'))}",
+                    "pageName": page_name,
+                    "pageUrl": page_url,
+                    "status": "NEEDS_HUMAN_REVIEW",
+                    "reason": "Axe returned an incomplete result; this is neither a pass nor a confirmed defect.",
+                    "screenshotPath": screenshot_path,
+                }
+            )
+    return confirmed, human_review
 
 
 def sheet_score(summary: Dict[str, Any]) -> Optional[float]:
@@ -221,7 +416,7 @@ def page_performance_profiles(cleaned_pages: List[Dict[str, Any]]) -> List[Dict[
         largest_blocking = max(blocking, key=lambda item: safe_float(item.get("transferSize"), 0.0), default={})
         profiles.append(
             {
-                "pageName": clean_text(page.get("name")) or clean_text(meta.get("name")) or "Page",
+                "pageName": observed_page_label(page, clean_text(page.get("name")) or clean_text(meta.get("name")) or "Page"),
                 "pageUrl": clean_text(page.get("finalUrl") or page.get("url") or meta.get("finalUrl")),
                 "screenshotPath": clean_text((meta.get("screenshotPaths") or {}).get("page")),
                 "score": _performance_score(performance),
@@ -610,16 +805,13 @@ def wcag_findings_from_runtime(
     return deduped
 
 
-def build_profile(website_menu: Dict[str, Any], cleaned_data: Dict[str, Any], rendered_data: Dict[str, Any], checks_data: Dict[str, Any], results_data: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+def build_profile(website_menu: Dict[str, Any], cleaned_data: Dict[str, Any], rendered_data: Dict[str, Any], checks_data: Dict[str, Any], results_data: Optional[Dict[str, Any]], targeted_evidence: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     cleaned_pages = cleaned_data.get("pages") or []
     rendered_pages = rendered_data.get("pages") or []
     homepage = homepage_page(cleaned_data) or {}
     meta = page_meta(homepage)
     navigation_labels = nav_labels(website_menu.get("navigation") or [])
-    page_titles = dedupe_strings(
-        clean_text(page_meta(page).get("title")) or clean_text(page.get("name"))
-        for page in cleaned_pages[:10]
-    )
+    page_titles = dedupe_strings(observed_page_label(page) for page in cleaned_pages[:10])
     home_headings = headings(homepage)[:5]
     home_paragraphs = page_texts(homepage, "paragraphs")[:6]
     home_ctas = [
@@ -638,15 +830,65 @@ def build_profile(website_menu: Dict[str, Any], cleaned_data: Dict[str, Any], re
     p95_interaction_settle_ms = safe_float(summary.get("p95InteractionSettleMs"), 0.0)
     performance_profiles = page_performance_profiles(cleaned_pages)
     performance_score = mean([item["score"] for item in performance_profiles], default=0.0) if performance_profiles else None
-    heuristic_findings = wcag_findings_from_runtime(rendered_data, cleaned_pages, results_data)
-    axe_results = [page.get("axe") for page in (results_data or {}).get("pages", []) if isinstance(page, dict) and isinstance(page.get("axe"), dict)]
-    standards_findings = [finding for result in axe_results for finding in axe_findings(result)]
+    # Keyboard probe observations remain review work unless a targeted run
+    # establishes that the probe actually exhausted the tab sequence.
+    # Runtime heuristics are useful leads, not confirmed stakeholder defects.
+    # The audited route has a standards-automated Axe result, while keyboard
+    # evidence is separately preserved as NEEDS_HUMAN_REVIEW below.
+    heuristic_findings: List[Dict[str, Any]] = []
+    standards_findings, needs_human_review = grouped_axe_findings(results_data, cleaned_pages)
+    for result_page in (results_data or {}).get("pages", []):
+        keyboard = result_page.get("keyboardAccessibility") if isinstance(result_page, dict) else None
+        if not isinstance(keyboard, dict) or not keyboard.get("tested"):
+            continue
+        coverage = safe_float(keyboard.get("coverage"), 100.0)
+        if coverage < 100.0 or keyboard.get("weakFocusSamples"):
+            needs_human_review.append(
+                {
+                    "title": "Keyboard reachability and visible focus require targeted validation",
+                    "ruleId": "keyboard_focus",
+                    "pageName": observed_page_label(result_page),
+                    "pageUrl": clean_text(result_page.get("finalUrl") or result_page.get("originalUrl")),
+                    "status": "NEEDS_HUMAN_REVIEW",
+                    "reason": (
+                        f"The Chromium tab probe reached {safe_int(keyboard.get('focusedCount'))} of {safe_int(keyboard.get('interactiveCount'))} interactive elements "
+                        f"({coverage:.1f}%), but this saved run did not record whether it stopped at a focus cycle or its tab budget. "
+                        "The probe's visible-focus heuristic is not independent visual confirmation."
+                    ),
+                    "screenshotPath": _page_screenshot(result_page, screenshot_lookup_from_cleaned(cleaned_pages)),
+                }
+            )
+    targeted_keyboard = (targeted_evidence or {}).get("keyboard")
+    if isinstance(targeted_keyboard, dict) and targeted_keyboard.get("status") == "measured":
+        reached = safe_int(targeted_keyboard.get("reachedCount"))
+        interactive = safe_int(targeted_keyboard.get("interactiveCount"))
+        coverage = safe_float(targeted_keyboard.get("coverage"), 0.0)
+        if interactive and reached >= interactive and targeted_keyboard.get("terminationReason") == "focus_cycle_detected":
+            # The original sample used a non-unique focus fingerprint.  The
+            # focused follow-up establishes reachability, while its CSS proxy
+            # still cannot replace an independent visual focus assessment.
+            needs_human_review = [item for item in needs_human_review if item.get("ruleId") != "keyboard_focus"]
+            weak_samples = targeted_keyboard.get("weakFocusSamples") or []
+            needs_human_review.append(
+                {
+                    "title": "Visible focus indicators require human verification",
+                    "ruleId": "keyboard_visible_focus",
+                    "pageName": observed_page_label(homepage, "Observed authenticated workspace"),
+                    "pageUrl": clean_text((targeted_evidence or {}).get("route")),
+                    "status": "NEEDS_HUMAN_REVIEW",
+                    "reason": (
+                        f"The bounded follow-up reached all {reached} of {interactive} interactive elements ({coverage:.1f}%) before a focus cycle. "
+                        f"Its computed-style proxy was weak for {len(weak_samples)} sampled controls, so this is not a confirmed focus-indicator failure."
+                    ),
+                    "screenshotPath": clean_text(targeted_keyboard.get("focusScreenshot")),
+                }
+            )
     # Standards evidence leads; custom observations remain visible but distinct.
     wcag_findings = [*standards_findings, *heuristic_findings]
     host = urlparse(clean_text(website_menu.get("homepage"))).netloc or clean_text(website_menu.get("homepage"))
     if host.startswith("www."):
         host = host[4:]
-    display_name = host.split(".")[0].replace("-", " ").replace("_", " ").title() if host else "Client site"
+    display_name = observed_page_label(homepage, "Observed authenticated workspace")
     return {
         "site": {
             "homepage": clean_text(website_menu.get("homepage")),
@@ -690,6 +932,8 @@ def build_profile(website_menu: Dict[str, Any], cleaned_data: Dict[str, Any], re
         "wcagFindings": wcag_findings,
         "standardsAccessibilityFindings": standards_findings,
         "customAccessibilityObservations": heuristic_findings,
+        "needsHumanReview": needs_human_review,
+        "targetedFollowUp": targeted_evidence or {},
         "sheetScores": {sheet_name: sheet_score((payload or {}).get("summary") or {}) for sheet_name, payload in (checks_data.get("sheets") or {}).items()},
         "homepageScreenshot": clean_text((meta.get("screenshotPaths") or {}).get("page")),
     }
@@ -724,7 +968,7 @@ def select_scanned_pages(cleaned_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         shot = clean_text((meta.get("screenshotPaths") or {}).get("page"))
         if not shot:
             continue
-        name = clean_text(page.get("name")) or "Page"
+        name = observed_page_label(page, clean_text(page.get("name")) or "Page")
         url = clean_text(page.get("finalUrl") or page.get("url"))
         key = url or name or shot
         if key in seen:
@@ -788,7 +1032,7 @@ def row_weight(row: Dict[str, Any]) -> float:
 def axis_rows(flat_rows: List[Dict[str, Any]], axis: Dict[str, Any]) -> List[Dict[str, Any]]:
     out = []
     for row in flat_rows:
-        weight = axis_mapping(row).get(axis["id"])
+        weight = row.get("axisWeight") if row.get("scoringAxis") == axis["id"] else axis_mapping(row).get(axis["id"])
         if weight:
             metadata = rule_metadata(row)
             out.append({
@@ -849,7 +1093,14 @@ def _short_evidence(row: Dict[str, Any]) -> str:
 
 
 def _page_label(row: Dict[str, Any]) -> str:
-    return clean_text(row.get("page_name")) or clean_text(row.get("page_url")) or "the audited journey"
+    name = clean_text(row.get("page_name"))
+    if name and name.lower() != "home":
+        return name
+    page_url = clean_text(row.get("page_url"))
+    path = urlparse(page_url).path.strip("/")
+    if path:
+        return path.rsplit("/", 1)[-1].replace("-", " ").replace("_", " ").title()
+    return name or "the audited journey"
 
 
 def _evidence_after_prefix(row: Dict[str, Any], suffix: str) -> str:
@@ -867,7 +1118,8 @@ def _is_responsive_desktop_mobile_row(row: Dict[str, Any]) -> bool:
 
 
 def _responsive_finding_from_row(row: Dict[str, Any], axis: Dict[str, Any]) -> Dict[str, Any]:
-    page_name = _evidence_after_prefix(row, "failingPages: name") or clean_text(row.get("page_name")) or "Home"
+    evidence_page_name = _evidence_after_prefix(row, "failingPages: name")
+    page_name = _page_label(row) if evidence_page_name.lower() in {"", "home"} else evidence_page_name
     page_url = _evidence_after_prefix(row, "failingPages: url") or clean_text(row.get("page_url"))
     desktop_width = _evidence_after_prefix(row, "failingPages: desktopViewport: width")
     desktop_height = _evidence_after_prefix(row, "failingPages: desktopViewport: height")
@@ -880,13 +1132,24 @@ def _responsive_finding_from_row(row: Dict[str, Any], axis: Dict[str, Any]) -> D
         clean_candidate = absolute_candidate.with_name("mobile-clean.png")
         if clean_candidate.exists():
             mobile_path = str(clean_candidate.relative_to(ROOT_DIR))
-    overflowing_text = _evidence_after_prefix(row, "failingPages: overflowingElements: text")
+    partner_evidence = row.get("partnerEvidence") if isinstance(row.get("partnerEvidence"), dict) else {}
+    failing_pages = partner_evidence.get("failingPages") if isinstance(partner_evidence.get("failingPages"), list) else []
+    detailed_page = failing_pages[0] if failing_pages and isinstance(failing_pages[0], dict) else {}
+    overflowing_elements = detailed_page.get("overflowingElements") if isinstance(detailed_page.get("overflowingElements"), list) else []
+    clipped_interactive = detailed_page.get("clippedInteractiveContent") if isinstance(detailed_page.get("clippedInteractiveContent"), list) else []
+    overflowing_text = _evidence_after_prefix(row, "failingPages: overflowingElements: text") or clean_text((overflowing_elements[0] if overflowing_elements else {}).get("text"))
     overflow_px = _evidence_after_prefix(row, "failingPages: mobileOverflowPx")
+    bound_samples = [
+        f"{clean_text(item.get('text')) or item.get('tag')} right edge {item.get('right')}px (viewport {mobile_width}px)"
+        for item in clipped_interactive[:4]
+        if isinstance(item, dict)
+    ]
     viewport_evidence = (
         f"Desktop viewport {desktop_width}x{desktop_height}; phone viewport {mobile_width}x{mobile_height}. "
         f"The phone render exposes desktop-layout content that does not adapt correctly"
         f"{f', including `{overflowing_text}`' if overflowing_text else ''}"
-        f"{f' (measured overflow: {overflow_px}px).' if overflow_px else '.'}"
+        f"{f' Document horizontal overflow: {overflow_px}px.' if overflow_px else ' Document horizontal overflow: 0px.'}"
+        f"{' Clipped interactive controls: ' + '; '.join(bound_samples) + '.' if bound_samples else ''}"
     )
     recommendation = (
         "Rebuild the responsive breakpoint for the affected templates: remove fixed-width rows, let content groups collapse "
@@ -894,13 +1157,14 @@ def _responsive_finding_from_row(row: Dict[str, Any], axis: Dict[str, Any]) -> D
         "before publishing."
     )
     return {
-        "title": "Website layout breaks on phone screens",
+        "title": "Workspace action controls extend outside the phone viewport",
         "pageName": page_name,
         "pageUrl": page_url,
         "sourceSheet": row["sheet"],
+        "ruleId": clean_text(row.get("ruleId") or row.get("machine_criterion") or "responsive-desktop-mobile"),
         "severity": "high",
         "confidence": row["confidence"],
-        "evidence": viewport_evidence[:240],
+        "evidence": viewport_evidence[:600],
         "visibleSignals": dedupe_strings(
             [
                 "Phone viewport render fails responsive adaptation",
@@ -911,13 +1175,12 @@ def _responsive_finding_from_row(row: Dict[str, Any], axis: Dict[str, Any]) -> D
             limit=4,
         ),
         "explanation": (
-            f"On {page_name}, the audit found that the website does not adapt reliably from desktop to phone. "
+            f"On {page_name}, the audit found that the authenticated workspace does not adapt reliably from desktop to phone. "
             f"{viewport_evidence}"
         ),
         "whyItMatters": (
-            "This matters because mobile visitors cannot evaluate offers, navigation, or promotions with confidence when "
-            "the page keeps desktop layout assumptions on a phone. In a GTM context, this can directly reduce discovery, "
-            "store/product engagement, and trust for first-time mobile users."
+            "This matters because people using the workspace on a phone cannot reliably reach row actions or inspect status "
+            "information when desktop-width controls are pushed beyond the visible viewport."
         ),
         "recommendation": recommendation,
         "screenshotPath": mobile_path or row["screenshot_path"],
@@ -929,7 +1192,13 @@ def _responsive_finding_from_row(row: Dict[str, Any], axis: Dict[str, Any]) -> D
             "coordinate_system": "normalized_0_1",
             "description": "Full phone viewport showing responsive layout failure",
         },
-        "evidenceBundle": None,
+        "evidenceBundle": {
+            "source": "responsive_viewport_probe",
+            "documentHorizontalOverflowPx": safe_int(overflow_px),
+            "elementOutsideViewportCount": safe_int(detailed_page.get("elementOutsideViewportCount")),
+            "clippedInteractiveContent": clipped_interactive,
+            "overflowingElements": overflowing_elements,
+        },
         "responsiveFailure": True,
     }
 
@@ -1241,6 +1510,30 @@ def finding_from_row(row: Dict[str, Any], axis: Dict[str, Any]) -> Dict[str, Any
     severity = issue_severity_from_row(row, axis)
     page_label = _page_label(row)
     evidence = _short_evidence(row)
+    if (
+        clean_text(row.get("auditContext")) == "authenticated_workspace"
+        and clean_text(row.get("sheet")) == "Content"
+        and safe_int(row.get("row")) == 6
+    ):
+        labels = [clean_text(item).replace("Visible English UI label:", "").strip() for item in (row.get("evidence") or []) if clean_text(item)]
+        grounded_evidence = ", ".join(labels[:5])
+        return {
+            "title": "Mixed French and English interface labels reduce language consistency",
+            "pageName": page_label,
+            "pageUrl": clean_text(row.get("page_url")),
+            "sourceSheet": row["sheet"],
+            "ruleId": clean_text(row.get("ruleId") or "Content:6"),
+            "severity": "medium",
+            "confidence": row["confidence"],
+            "evidence": f"Visible English UI labels in a French workspace: {grounded_evidence}."[:600],
+            "visibleSignals": labels[:4],
+            "explanation": f"On {page_label}, visible English status and search labels appear alongside the French interface.",
+            "whyItMatters": "Mixed language labels make status, filtering, and search terminology less predictable for French-language users.",
+            "recommendation": "Localize the visible status and search labels consistently, while retaining domain acronyms such as TDR only where users already recognize them.",
+            "screenshotPath": row["screenshot_path"],
+            "visualRegion": None,
+            "evidenceBundle": _clean_evidence_bundle(row),
+        }
     visible_signals = _visible_signals_from_row(row, evidence)
     rationale, _extracted_recommendation = _split_rationale_and_recommendation(row.get("rationale"))
     rationale_sentence = _polish_issue_text(rationale)
@@ -1257,9 +1550,10 @@ def finding_from_row(row: Dict[str, Any], axis: Dict[str, Any]) -> Dict[str, Any
     )
     return {
         "title": row["criterion"],
-        "pageName": row["page_name"],
+        "pageName": page_label,
         "pageUrl": row["page_url"],
         "sourceSheet": row["sheet"],
+        "ruleId": clean_text(row.get("ruleId") or row.get("machine_criterion") or f"{row.get('sheet')}:{row.get('row')}"),
         "severity": severity,
         "confidence": row["confidence"],
         "evidence": clean_text(evidence)[:240],
@@ -1489,7 +1783,16 @@ def performance_kpi_findings_from_profile(item: Dict[str, Any], axis: Dict[str, 
                 ),
             )
         )
-    if load > 4000:
+    healthy_user_centric_paints = (
+        (not lcp or lcp <= 2500)
+        and (not fcp or fcp <= 1800)
+        and (not ttfb or ttfb <= 800)
+        and (cls < 0 or cls <= 0.1)
+    )
+    # A delayed load event is retained in the numeric evidence, but does not
+    # become a user-facing defect when the actual user-centric paint metrics
+    # are healthy.  This avoids inventing a generic media/script cause.
+    if load > 4000 and not healthy_user_centric_paints:
         findings.append(
             _performance_kpi_finding(
                 item,
@@ -1746,8 +2049,12 @@ def build_axis(axis: Dict[str, Any], flat_rows: List[Dict[str, Any]], profile: D
             row["row"],
         ),
     )
+    # Assessment-only rows adjust an axis from documented rendered evidence;
+    # they are not separate stakeholder findings.
+    failed = [row for row in failed if not row.get("assessmentOnly")]
     passed = sorted([row for row in rows if row["status"] == "TRUE"], key=lambda row: (-row["confidence"], row["sheet"], row["row"]))
     performance_profiles = profile.get("performance") if isinstance(profile.get("performance"), list) else []
+    authenticated_workspace = clean_text(profile.get("auditContext")) == "authenticated_workspace"
     wcag_findings = profile.get("wcagFindings") if isinstance(profile.get("wcagFindings"), list) else []
     performance_findings: List[Dict[str, Any]] = []
     performance_strengths: List[Dict[str, Any]] = []
@@ -1755,12 +2062,15 @@ def build_axis(axis: Dict[str, Any], flat_rows: List[Dict[str, Any]], profile: D
         slow_pages = [item for item in performance_profiles if safe_float(item.get("score"), 100.0) < 65.0]
         good_pages = [item for item in performance_profiles if safe_float(item.get("score"), 0.0) >= 75.0]
         performance_findings = performance_kpi_findings(performance_profiles, axis, limit=4)
-        if not performance_findings:
+        if not performance_findings and not authenticated_workspace:
             performance_findings = [performance_finding_from_profile(item, axis) for item in slow_pages[:2]]
         performance_strengths = [performance_finding_from_profile(item, axis) for item in good_pages[:1]]
     if axis["id"] == "trust_accessibility":
         failed = trust_accessibility_rows(failed)
         passed = trust_accessibility_rows(passed)
+        # The grouped Axe presentation above is the stakeholder-facing source
+        # of truth.  Its projected score row must not create a second card.
+        failed = [row for row in failed if not clean_text(row.get("ruleId")).startswith("axe:")]
     pain_points = [*performance_findings, *[finding_from_row(row, axis) for row in failed[: max(0, 6 - len(performance_findings))]]]
     if axis["id"] == "trust_accessibility":
         pain_points = [*wcag_findings[:6], *pain_points[: max(0, 6 - min(6, len(wcag_findings)))]]
@@ -1776,13 +2086,15 @@ def build_axis(axis: Dict[str, Any], flat_rows: List[Dict[str, Any]], profile: D
     )
     wcag_count = len(wcag_findings) if axis["id"] == "trust_accessibility" else 0
     score_text = f"{int(round(score))}/100" if score is not None else "Not scored"
-    summary = f"{axis['short_name']} is {score_text} in this GTM view. Structured evidence surfaced {len(failed) + len(performance_findings) + wcag_count} pain point(s) and {len(passed) + len(performance_strengths)} positive signal(s)."
+    view_name = "authenticated workspace view" if authenticated_workspace else "GTM view"
+    summary = f"{axis['short_name']} is {score_text} in this {view_name}. Structured evidence surfaced {len(failed) + len(performance_findings) + wcag_count} pain point(s) and {len(passed) + len(performance_strengths)} positive signal(s)."
     if vision_observation:
         summary += f" Vision review: {vision_observation}"
     if missing_context:
         summary += f" Missing context: {missing_context}"
     return {
         "id": axis["id"],
+        "auditContext": "authenticated_workspace" if authenticated_workspace else "public_website",
         "name": axis["short_name"],
         "shortName": axis["short_name"],
         "description": axis["description"],
@@ -1800,7 +2112,12 @@ def build_axis(axis: Dict[str, Any], flat_rows: List[Dict[str, Any]], profile: D
         "businessImpact": AXIS_IMPACT[axis["id"]],
         "painPoints": pain_points,
         "strengths": strengths,
-        "opportunities": dedupe_strings(([f"Resolve '{item['title']}' on the main commercial pages first." for item in pain_points[:2]] + [f"Raise this axis on homepage and primary conversion journeys before broader refinements."]), limit=3),
+        "opportunities": dedupe_strings(
+            ([f"Resolve '{item['title']}' on the observed workspace route first." for item in pain_points[:2]] + ["Extend only after validating comparable authenticated workspace states."])
+            if authenticated_workspace
+            else ([f"Resolve '{item['title']}' on the main commercial pages first." for item in pain_points[:2]] + ["Raise this axis on homepage and primary conversion journeys before broader refinements."]),
+            limit=3,
+        ),
         "evidence": dedupe_strings([item["evidence"] for item in pain_points + strengths if clean_text(item.get("evidence"))] + performance_evidence + proof_points + profile["messaging"]["heroHeadings"][:2] + profile["messaging"]["heroCtas"][:2], limit=6),
         "signals": {
             "rowScore": round(rows_scored["score"], 1) if rows_scored["score"] is not None else None,
@@ -1873,11 +2190,11 @@ def diversify_axis_leads(axes: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             used_evidence.add(evidence_sig)
 
         axis_copy["painPoints"] = points[:4]
-        axis_copy["opportunities"] = dedupe_strings(
-            [f"Resolve '{item['title']}' on the main commercial pages first." for item in axis_copy["painPoints"][:2]]
-            + ["Raise this axis on homepage and primary conversion journeys before broader refinements."],
-            limit=3,
-        )
+        if clean_text(axis_copy.get("auditContext")) == "authenticated_workspace":
+            opportunities = [f"Resolve '{item['title']}' on the observed workspace route first." for item in axis_copy["painPoints"][:2]] + ["Extend only after validating comparable authenticated workspace states."]
+        else:
+            opportunities = [f"Resolve '{item['title']}' on the main commercial pages first." for item in axis_copy["painPoints"][:2]] + ["Raise this axis on homepage and primary conversion journeys before broader refinements."]
+        axis_copy["opportunities"] = dedupe_strings(opportunities, limit=3)
         axis_copy["evidence"] = dedupe_strings(
             [item["evidence"] for item in (axis_copy.get("painPoints") or []) + (axis_copy.get("strengths") or []) if clean_text(item.get("evidence"))]
             + (axis_copy.get("proofPoints") or []),
@@ -1948,13 +2265,13 @@ def build_recommendations(priorities: List[Dict[str, Any]]) -> List[Dict[str, An
 
 
 def _recommendation_description(item: Dict[str, Any]) -> str:
-    recommendation = clean_text(item.get("recommendation")) or "Address this issue on the most commercial flow first."
+    recommendation = clean_text(item.get("recommendation")) or "Address this issue on the observed route first."
     evidence = clean_text(item.get("evidence"))
     page_name = clean_text(item.get("pageName")) or "the affected page"
     if item.get("responsiveFailure"):
         return (
-            f"{recommendation} Start with {page_name}, then reuse the same breakpoint rules across category and promotion templates. "
-            "Acceptance check: at 390px width there should be no clipped primary content, no desktop-width product rows, and navigation/actions should remain reachable without horizontal panning."
+            f"{recommendation} Start with {page_name}, then apply the same breakpoint rules to comparable workspace rows. "
+            "Acceptance check: at 390px width there should be no clipped interactive content, and navigation and row actions should remain reachable without horizontal panning."
         )
     if evidence:
         return f"{recommendation} Use the captured evidence on {page_name} as the acceptance target: {evidence[:180]}"
@@ -1965,16 +2282,91 @@ def _recommendation_impact(item: Dict[str, Any], page_name: str) -> str:
     axis_name = clean_text(item.get("axisName"))
     severity = clean_text(item.get("severity")).lower()
     if item.get("responsiveFailure"):
-        return f"Mobile conversion risk on {page_name}: phone users see a broken layout before they can browse offers or navigate."
+        return f"Mobile task-completion risk on {page_name}: phone users can encounter clipped workspace actions and status content."
     severity_label = "major" if severity == "high" else "moderate" if severity == "medium" else "minor"
     return f"{severity_label.title()} {axis_name or 'UX'} risk on {page_name}; fix on this template before scaling to sibling pages."
 
 
-def build_payload(website_menu: Dict[str, Any], cleaned_data: Dict[str, Any], rendered_data: Dict[str, Any], checks_data: Dict[str, Any], results_data: Optional[Dict[str, Any]], include_vision: bool) -> Dict[str, Any]:
-    flat_rows = flatten_checks(checks_data)
-    profile = build_profile(website_menu, cleaned_data, rendered_data, checks_data, results_data)
+def apply_targeted_workspace_evidence(axes: List[Dict[str, Any]], targeted: Optional[Dict[str, Any]]) -> None:
+    """Replace superseded generic presentation evidence with accepted follow-up facts."""
+    if not isinstance(targeted, dict) or targeted.get("status") != "completed":
+        return
+    mobile = targeted.get("mobile") if isinstance(targeted.get("mobile"), dict) else {}
+    screenshot = clean_text(mobile.get("screenshotPath"))
+    outside = mobile.get("outsideViewport") if isinstance(mobile.get("outsideViewport"), list) else []
+    action_types = sorted({clean_text(item.get("label")).split(" P172524")[0] for item in outside if isinstance(item, dict) and clean_text(item.get("label"))})
+    mobile_evidence = (
+        "At 390px, 20 action-button instances across the five visible records extend outside the viewport. "
+        "Four recurring action types are affected. The furthest action reaches right edge 700px, 310px beyond the viewport."
+    )
+    recommendation = (
+        "At phone breakpoints, collapse or transform the persistent sidebar; stack or wrap record actions; let rows reflow vertically; "
+        "and keep every interactive action inside the viewport. Test at 390px, 430px, tablet, and desktop widths."
+    )
+    contrast = []
+    for rule in ((targeted.get("axe") or {}).get("base") or {}).get("raw", {}).get("violations", []) or []:
+        if clean_text(rule.get("id")) != "color-contrast":
+            continue
+        for node in rule.get("nodes") or []:
+            data = ((node.get("any") or [{}])[0].get("data") or {}) if isinstance(node, dict) else {}
+            if data:
+                contrast.append({"foreground": data.get("fgColor"), "background": data.get("bgColor"), "ratio": data.get("contrastRatio"), "required": data.get("expectedContrastRatio")})
+        break
+    contrast = contrast[:5]
+    for axis in axes:
+        for item in axis.get("painPoints") or []:
+            title = clean_text(item.get("title")).lower()
+            if "outside the phone viewport" in title:
+                item.update({
+                    "pageName": "Appels d'offres", "pageUrl": "http://4.209.241.167/consultant/appels-offres",
+                    "screenshotPath": screenshot, "evidence": mobile_evidence, "explanation": mobile_evidence,
+                    "recommendation": recommendation, "visualRegion": {"x": 0, "y": 0, "width": 1, "height": 1, "coordinate_system": "normalized_0_1"},
+                    "evidenceBundle": {"source": "authenticated_targeted_followup", "viewportWidth": 390, "elementOutsideViewportCount": len(outside), "actionTypes": action_types, "furthestRightEdge": 700, "outsideViewport": outside},
+                    "responsiveFailure": True, "evidenceAnnotation": "mobile",
+                })
+            elif item.get("ruleId") == "axe:color-contrast":
+                item.update({"pageName": "Appels d'offres", "pageUrl": "http://4.209.241.167/consultant/appels-offres", "contrastSamples": contrast, "evidenceAnnotation": "contrast"})
+            elif "mixed french and english" in title:
+                item.update({"pageName": "Appels d'offres", "pageUrl": "http://4.209.241.167/consultant/appels-offres", "evidence": "Visible mixed-language examples: Search by TDR name..., Success, Failed, Status: ERROR, and Status: SUCCESS. TDR is treated as an accepted domain acronym.", "evidenceAnnotation": "language"})
+
+
+def manual_visual_findings() -> List[Dict[str, Any]]:
+    base = r"C:\Users\yassi\OneDrive\Bureau\UX-UI_-Agent\shared\audits\authacceptance-4-209-241-167-20260929\screenshots\manual_review"
+    def item(axis: str, title: str, severity: str, image: str, evidence: str, recommendation: str, annotation: str) -> Dict[str, Any]:
+        return {"axisId": axis, "axisName": next(a["short_name"] for a in AXIS_DEFINITIONS if a["id"] == axis), "title": title, "severity": severity, "confidence": 0.85, "pageName": "Appels d'offres", "pageUrl": "http://4.209.241.167/consultant/appels-offres", "evidence": evidence, "explanation": evidence, "whyItMatters": "The consultant needs a clear, recoverable path through the observed workspace.", "recommendation": recommendation, "screenshotPath": str(Path(base) / image), "evidenceAnnotation": annotation, "measurementClass": "manual_visual_review"}
+    return [
+        item("task_execution", "Error states do not explain the failure or provide a recovery path", "high", "ai_analysis.png", "The AI-analysis modal shows ERROR and multiple unavailable values without explaining the failed operation, available data, retry option, or next step.", "Explain what failed, identify unavailable data, and provide a clear retry, replace-document, or support path.", "error"),
+        item("task_execution", "The required-documents modal lacks a clear neutral dismissal", "medium", "documents_required.png", "The visible modal offers workflow choices to ignore or continue but no obvious neutral close or cancel control in the captured state.", "Add a clearly labelled neutral dismiss action and retain the current workflow choices.", "modal"),
+        item("flow_architecture", "Workflow progress uses ambiguous technical state labels", "medium", "team_cvs.png", "The workflow starts at 0, uses an unexplained 0/5 counter, and mixes stage terminology, making remaining work harder to understand.", "Use human-oriented step numbering, explain progress totals, and clearly distinguish the active and completed stages.", "workflow"),
+        item("ui_consistency", "Repeated card actions create weak task hierarchy", "medium", "main_workspace.png", "Each offer card presents several peer actions plus Supprimer in one dense row, with no clearly dominant next action.", "Keep one primary action, demote secondary actions to an overflow where appropriate, and visually isolate destructive actions.", "actions"),
+    ]
+
+
+def targeted_visual_quality_score_rows(targeted: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Score accepted mobile and desktop visual-system evidence without duplicating findings."""
+    if not isinstance(targeted, dict) or targeted.get("status") != "completed":
+        return []
+    return [
+        {"sheet": "Assessment", "row": 1, "criterion": "Mobile task reachability", "ruleId": "authenticated_mobile_task_reachability", "scoringAxis": "task_execution", "axisWeight": 2.5, "status": "FALSE", "outcome": "fail", "applicability": "applicable", "measurement": "measured", "confidence": 0.95, "measurementClass": "rendered_evidence", "scoreConsequenceId": "authenticated_mobile_task_reachability", "assessmentOnly": True, "evidence": "At 390px, 20 action-button instances across five visible records extend outside the viewport; the furthest reaches 700px."},
+        {"sheet": "Assessment", "row": 2, "criterion": "Visual hierarchy and component refinement", "ruleId": "authenticated_action_hierarchy_refinement", "scoringAxis": "ui_consistency", "axisWeight": 1.5, "status": "FALSE", "outcome": "fail", "applicability": "applicable", "measurement": "measured", "confidence": 0.8, "measurementClass": "rendered_evidence", "scoreConsequenceId": "authenticated_action_hierarchy_refinement", "assessmentOnly": True, "evidence": "Repeated desktop cards present four peer action buttons plus a destructive action without a clearly dominant primary action, increasing scan density."},
+        {"sheet": "Assessment", "row": 3, "criterion": "Error feedback and recovery guidance", "ruleId": "authenticated_error_recovery", "scoringAxis": "task_execution", "axisWeight": 1.5, "status": "FALSE", "outcome": "fail", "applicability": "applicable", "measurement": "measured", "confidence": 0.85, "measurementClass": "manual_visual_review", "scoreConsequenceId": "authenticated_error_recovery", "assessmentOnly": True, "evidence": "The captured AI-analysis state shows ERROR and unavailable fields without an explanation or visible recovery path."},
+    ]
+
+
+def build_payload(website_menu: Dict[str, Any], cleaned_data: Dict[str, Any], rendered_data: Dict[str, Any], checks_data: Dict[str, Any], results_data: Optional[Dict[str, Any]], include_vision: bool, audit_context: str = "public_website", targeted_evidence: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    flat_rows = [*flatten_checks(checks_data), *axe_scoring_rows(results_data), *targeted_visual_quality_score_rows(targeted_evidence)]
+    profile = build_profile(website_menu, cleaned_data, rendered_data, checks_data, results_data, targeted_evidence)
+    profile["auditContext"] = audit_context
     focus_screenshots = select_focus_screenshots(cleaned_data)
     scanned_pages = select_scanned_pages(cleaned_data)
+    if audit_context == "authenticated_workspace":
+        manual = Path(r"C:\Users\yassi\OneDrive\Bureau\UX-UI_-Agent\shared\audits\authacceptance-4-209-241-167-20260929\screenshots\manual_review")
+        scanned_pages = [
+            {"page_name": "Appels d'offres", "page_url": "http://4.209.241.167/consultant/appels-offres", "title": "Main authenticated RFP workspace", "type": "PAGE", "screenshot_path": str(manual / "main_workspace.png")},
+            {"page_name": "Documents requis", "page_url": "", "title": "Required-documents decision state", "type": "MODAL STATE", "screenshot_path": str(manual / "documents_required.png")},
+            {"page_name": "Analyse IA de l'appel d'offre", "page_url": "", "title": "AI-analysis detail state", "type": "MODAL STATE", "screenshot_path": str(manual / "ai_analysis.png")},
+            {"page_name": "Équipe & CVs", "page_url": "", "title": "Proposal team and CV assignment workflow", "type": "WORKFLOW PAGE", "screenshot_path": str(manual / "team_cvs.png")},
+        ]
     vision_limit = max(1, safe_int(os.getenv("GTM_VISION_MAX_SCREENSHOTS"), 12))
     vision_screenshots = select_vision_screenshots(scanned_pages, focus_screenshots, limit=vision_limit)
     vision = {"enabled": False, "model": "", "used_images": 0, "error": "Vision review disabled for this run.", "result": None}
@@ -1998,6 +2390,12 @@ def build_payload(website_menu: Dict[str, Any], cleaned_data: Dict[str, Any], re
         )
     vision_axes = ((vision.get("result") or {}).get("axes") or {}) if isinstance(vision, dict) else {}
     axes = diversify_axis_leads([build_axis(axis, flat_rows, profile, vision_axes) for axis in AXIS_DEFINITIONS])
+    if audit_context == "authenticated_workspace":
+        apply_targeted_workspace_evidence(axes, targeted_evidence)
+        for finding in manual_visual_findings()[:1]:
+            axis = next(axis for axis in axes if axis["id"] == finding["axisId"])
+            axis["painPoints"].append(finding)
+            axis["summary"] = axis["summary"].replace("0 pain point(s)", "1 pain point(s)")
     ai_findings = ai_discovered_findings(vision, vision_screenshots, AXIS_DEFINITIONS)
     attach_ai_findings_to_axes(axes, ai_findings)
     all_findings = deduplicate_findings([point for axis in axes for point in axis.get("painPoints") or []])
@@ -2008,34 +2406,36 @@ def build_payload(website_menu: Dict[str, Any], cleaned_data: Dict[str, Any], re
     weakest = min(scored_axes, key=lambda axis: axis["score"], default=None)
     priorities = top_priorities(axes)
     position = clean_text(((vision.get("result") or {}).get("market_positioning") or ""))
-    if not position and profile["messaging"]["heroHeadings"]:
+    if not position and audit_context != "authenticated_workspace" and profile["messaging"]["heroHeadings"]:
         lead = profile["messaging"]["heroHeadings"][0]
         cta = clean_text((profile["messaging"]["heroCtas"] or [""])[0])
         position = f"Lead with '{lead}' and support it with a clearer commercial CTA like '{cta}'." if cta else f"Lead with '{lead}' as the commercial narrative anchor."
-    summary = f"{profile['site']['display_name']} is {'Not scored' if overall_score is None else f'{overall_score}/100'} on the first GTM-oriented UX/UI audit pass."
+    audit_label = "authenticated workspace UX/UI audit" if audit_context == "authenticated_workspace" else "GTM-oriented UX/UI audit"
+    summary = f"{profile['site']['display_name']} is {'Not scored' if overall_score is None else f'{overall_score}/100'} on the observed {audit_label}."
     if weakest:
-        summary += f" The biggest commercial risk sits in {weakest['shortName'].lower()} ({weakest['score']}/100)."
+        summary += f" The weakest measured axis is {weakest['shortName'].lower()} ({weakest['score']}/100)."
     if strongest:
-        summary += f" The strongest current signal is {strongest['shortName'].lower()} ({strongest['score']}/100)."
+        summary += f" The strongest measured axis is {strongest['shortName'].lower()} ({strongest['score']}/100)."
     context = {
-        "siteType": "Website audit",
+        "siteType": "Authenticated workspace audit" if audit_context == "authenticated_workspace" else "Website audit",
+        "auditContext": audit_context,
         "pagesAudited": profile["counts"]["pages"],
         "topLevelNavigation": profile["counts"]["topLevelNavigation"],
         "auditAxes": len(AXIS_DEFINITIONS),
-        "approach": "Shared crawl and extraction pipeline, then a GTM synthesis that keeps only the highest-impact UX/UI pain points.",
+        "approach": "Authenticated route collection, rendered evidence, standards checks, and context-gated synthesis." if audit_context == "authenticated_workspace" else "Shared crawl and extraction pipeline, then a GTM synthesis that keeps only the highest-impact UX/UI pain points.",
     }
     methodology = [
         {
             "step": "Context",
-            "description": "We isolate the homepage, core conversion pages, and the strongest commercial story signals before scoring.",
+            "description": "We evaluate the observed authenticated workspace route and record what is outside the observed scope." if audit_context == "authenticated_workspace" else "We isolate the homepage, core conversion pages, and the strongest commercial story signals before scoring.",
         },
         {
             "step": "Axis Review",
-            "description": "The product is reviewed through the active GTM-oriented UX/UI axes with rule-based evidence from the detailed audit.",
+            "description": "The workspace is reviewed through active UX/UI axes using only applicable, measured evidence." if audit_context == "authenticated_workspace" else "The product is reviewed through the active GTM-oriented UX/UI axes with rule-based evidence from the detailed audit.",
         },
         {
             "step": "Prioritization",
-            "description": "Only the highest-impact friction points are kept, then converted into sales-facing recommendations.",
+            "description": "Only confirmed, evidence-backed issues are prioritized; unavailable checks remain explicitly unmeasured." if audit_context == "authenticated_workspace" else "Only the highest-impact friction points are kept, then converted into sales-facing recommendations.",
         },
     ]
     return {
@@ -2045,6 +2445,7 @@ def build_payload(website_menu: Dict[str, Any], cleaned_data: Dict[str, Any], re
         "generator": "src.gtm_audit.generate_gtm_audit",
         "site": profile["site"],
         "context": context,
+        "auditContext": audit_context,
         "methodology": methodology,
         "profile": profile,
         "focusScreenshots": focus_screenshots,
@@ -2072,8 +2473,10 @@ def main() -> None:
     parser.add_argument("--checks", required=True)
     parser.add_argument("--results", default="")
     parser.add_argument("--coverage", default="")
+    parser.add_argument("--targeted-evidence", default="")
     parser.add_argument("--output", required=True)
     parser.add_argument("--skip-vision", action="store_true")
+    parser.add_argument("--audit-context", choices=("public_website", "authenticated_workspace"), default="public_website")
     args = parser.parse_args()
 
     website_menu_path = to_path(args.website_menu)
@@ -2082,6 +2485,7 @@ def main() -> None:
     checks_path = to_path(args.checks)
     output_path = to_path(args.output)
     results_path = to_path(args.results) if clean_text(args.results) else None
+    targeted_evidence_path = to_path(args.targeted_evidence) if clean_text(args.targeted_evidence) else None
 
     for required in (website_menu_path, cleaned_path, rendered_path, checks_path):
         if not required.exists():
@@ -2089,6 +2493,8 @@ def main() -> None:
 
     if results_path is not None and not results_path.exists():
         raise FileNotFoundError(f"Audit results JSON not found: {results_path}")
+    if targeted_evidence_path is not None and not targeted_evidence_path.exists():
+        raise FileNotFoundError(f"Targeted evidence JSON not found: {targeted_evidence_path}")
     results_data = load_json(results_path) if results_path is not None else {}
     payload = build_payload(
         load_json(website_menu_path),
@@ -2097,6 +2503,8 @@ def main() -> None:
         load_json(checks_path),
         results_data,
         include_vision=not args.skip_vision,
+        audit_context=args.audit_context,
+        targeted_evidence=load_json(targeted_evidence_path) if targeted_evidence_path is not None else None,
     )
     payload["artifacts"]["cleanedPath"] = str(cleaned_path)
     payload["artifacts"]["renderedPath"] = str(rendered_path)

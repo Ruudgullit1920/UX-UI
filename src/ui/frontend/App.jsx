@@ -1,14 +1,44 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createApiClient } from "./api/client.js";
+import AppShell from "./components/AppShell.jsx";
 import AuditForm from "./audit/AuditForm.jsx";
-import AuditResults from "./audit/AuditResults.jsx";
-import ReviewPanel from "./review/ReviewPanel.jsx";
-import { useAuditJob } from "./hooks/useAuditJob.js";
-
-function configuredBaseUrl() { return String(window.localStorage.getItem("UX_UI_AUDITOR_API_BASE_URL") || window.__UX_UI_AUDITOR_CONFIG__?.apiBaseUrl || "").replace(/\/+$/, ""); }
+import AuditWorkspace from "./audit/AuditWorkspace.jsx";
+import InteractiveReport from "./review/InteractiveReport.jsx";
+import { TERMINAL, useAuditJob } from "./hooks/useAuditJob.js";
+import { getAudit } from "./api/audits.js";
+function configuredBaseUrl() { try { return String(window.localStorage.getItem("UX_UI_AUDITOR_API_BASE_URL") || window.__UX_UI_AUDITOR_CONFIG__?.apiBaseUrl || "").replace(/\/+$/, ""); } catch { return String(window.__UX_UI_AUDITOR_CONFIG__?.apiBaseUrl || "").replace(/\/+$/, ""); } }
 function isCrossOrigin(value) { try { return value && new URL(value).origin !== window.location.origin; } catch { return false; } }
 export default function App() {
-  const api = useMemo(() => createApiClient({ normalizeBaseUrl: (v) => String(v || "").replace(/\/+$/, ""), configuredBaseUrl, isCrossOrigin }), []);
-  const { job, setJob, error, setError, cancel } = useAuditJob(api);
-  return <main><header><h1>UX/UI Auditor</h1><p>Evidence-aware audits and structured review.</p></header>{error && <p className="error" role="alert">{error}</p>}<AuditForm api={api} onCreated={setJob} onError={setError} />{job && <section className="card"><h2>Audit progress</h2><p>{job.status || "queued"}: {job.stage || "Preparing audit"}</p>{!['completed','failed','cancelled'].includes(job.status) && <button onClick={() => cancel().catch((e) => setError(e.message))}>Cancel audit</button>}</section>}<AuditResults job={job} />{job?.id && <ReviewPanel api={api} jobId={job.id} onError={setError} />}</main>;
+  const api = useMemo(() => createApiClient({ normalizeBaseUrl: v => String(v || "").replace(/\/+$/, ""), configuredBaseUrl, isCrossOrigin }), []);
+  const reportMatch = window.location.pathname.match(/^\/report\/([^/]+)\/?$/);
+  const audit = useAuditJob(api);
+  const [view, setView] = useState("setup");
+  const [dirty, setDirty] = useState(false);
+  useEffect(() => {
+    if (audit.job?.id) {
+      try { sessionStorage.setItem("uxui-current-audit", audit.job.id); } catch { /* Session storage is optional. */ }
+      return;
+    }
+    let live = true;
+    let saved = "";
+    try { saved = sessionStorage.getItem("uxui-current-audit") || ""; } catch { /* Session storage is optional. */ }
+    if (saved) getAudit(api, saved).then(job => { if (live) { audit.setJob(job); setView("workspace"); } }).catch(() => { try { sessionStorage.removeItem("uxui-current-audit"); } catch { /* Session storage is optional. */ } });
+    return () => { live = false; };
+  }, [api, audit.job?.id, audit.setJob]);
+  function navigate(next) { setView(next); requestAnimationFrame(() => document.querySelector("#main-content")?.focus()); }
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = e => { e.preventDefault(); e.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+  function beforeCreate() {
+    // Confirm before creating a new server job, never after the request succeeds.
+    return !dirty || window.confirm("Start a new audit and discard the current audit’s unsaved review changes?");
+  }
+  function created(job) {
+    setDirty(false); audit.setJob(job); navigate("workspace");
+  }
+  if (reportMatch) return <InteractiveReport api={api} auditId={decodeURIComponent(reportMatch[1])}/>;
+  return <AppShell job={audit.job} view={view} onView={navigate}><div hidden={view !== "setup"}><AuditForm api={api} onCreated={created} beforeCreate={beforeCreate} activeJob={!!audit.job && !TERMINAL.has(audit.job.status)}/></div>{audit.job && <div hidden={view !== "workspace"}><AuditWorkspace key={audit.job.id} api={api} {...audit} onNew={() => navigate("setup")}/></div>}</AppShell>;
 }

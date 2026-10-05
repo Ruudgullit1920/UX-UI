@@ -131,6 +131,19 @@ def validate_public_url(value: str, *, resolver: Resolver | None = None) -> Vali
     return ValidatedURL(normalized, hostname, port, tuple(str(ipaddress.ip_address(x)) for x in addresses))
 
 
+def validate_dependency_origin(value: str, *, resolver: Resolver | None = None) -> ValidatedURL:
+    """Validate an explicitly opted-in browser dependency origin.
+
+    Dependency exceptions are origins, not arbitrary URLs: paths, queries, and
+    fragments are rejected so a run's authorization is easy to inspect.
+    """
+    checked = validate_public_url(value, resolver=resolver)
+    parsed = urlsplit(checked.url)
+    if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+        raise UnsafeURLError("Dependency authorization must be an origin without a path or query.")
+    return checked
+
+
 def chromium_host_resolver_rules(validated: Iterable[ValidatedURL]) -> str:
     rules: list[str] = []
     seen: set[str] = set()
@@ -144,15 +157,55 @@ def chromium_host_resolver_rules(validated: Iterable[ValidatedURL]) -> str:
     return ",".join(rules)
 
 
+def browser_request_is_allowed(
+    value: str,
+    allowed: Iterable[ValidatedURL],
+    *,
+    resolver: Resolver | None = None,
+) -> bool:
+    """Return whether a browser request matches a specifically approved origin.
+
+    Matching is deliberately exact on scheme, host, port, and DNS-pinned
+    address set.  An approved primary site or dependency never authorizes a
+    redirect to another origin.
+    """
+    try:
+        checked = validate_public_url(value, resolver=resolver)
+    except (UnsafeURLError, ValueError):
+        return False
+    parsed = urlsplit(checked.url)
+    for permitted in allowed:
+        permitted_parsed = urlsplit(permitted.url)
+        if (
+            parsed.scheme == permitted_parsed.scheme
+            and checked.hostname == permitted.hostname
+            and checked.port == permitted.port
+            and set(checked.addresses).issubset(set(permitted.addresses))
+        ):
+            return True
+    return False
+
+
+def sanitize_audit_ssl_keylogfile() -> bool:
+    """Remove only known machine-injected device paths in this process.
+
+    Some endpoint-security products set SSLKEYLOGFILE to a Windows device path
+    that OpenSSL and Playwright cannot open.  This does not alter the user's
+    Windows environment, and normal file paths are retained.
+    """
+    value = os.getenv("SSLKEYLOGFILE", "")
+    normalized = value.replace("/", "\\").lower()
+    if normalized.startswith("\\\\.\\") or "avgmonfltproxy" in normalized:
+        os.environ.pop("SSLKEYLOGFILE", None)
+        return True
+    return False
+
+
 async def install_playwright_network_guard(context, allowed: Iterable[ValidatedURL]) -> None:
-    pins = {item.hostname: set(item.addresses) for item in allowed}
+    approved = tuple(allowed)
 
     async def guard(route, request) -> None:
-        try:
-            checked = validate_public_url(request.url)
-            if checked.hostname not in pins or not set(checked.addresses).issubset(pins[checked.hostname]):
-                raise UnsafeURLError("Unapproved browser destination.")
-        except (UnsafeURLError, ValueError):
+        if not browser_request_is_allowed(request.url, approved):
             await route.abort("blockedbyclient")
             return
         await route.continue_()

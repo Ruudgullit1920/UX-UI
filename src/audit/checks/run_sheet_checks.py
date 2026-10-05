@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from src.audit.workspace import atomic_write_json
 from src.audit.result_semantics import build_page_index as semantic_page_index, enrich_result
+from .context_gating import apply_audit_context_gates
 from .common import AuditContext, clean_text
 from .content_checks import run as run_content_checks
 from .feedback_checks import run as run_feedback_checks
@@ -472,6 +473,7 @@ def synthesize_partner_result(
         "machine_criterion": ",".join(spec["criterion_ids"]),
         "partner_status": clean_text(worst_item.get("status")),
         "partner_category": clean_text(worst_item.get("category")),
+        "partnerEvidence": worst_item.get("evidence") if isinstance(worst_item.get("evidence"), dict) else None,
         "evidence_bundle": worst_item.get("evidence_bundle"),
     }
 
@@ -626,6 +628,7 @@ def main() -> None:
     parser.add_argument("--results", help="Optional path to audit-results_*.json used by runtime-oriented partner checks.")
     parser.add_argument("--output", required=True, help="Path to enriched checks output json")
     parser.add_argument("--evidence-manifest", help="Optional job-local evidence manifest output path")
+    parser.add_argument("--audit-context", choices=("public_website", "authenticated_workspace"), default="public_website")
     args = parser.parse_args()
 
     cleaned_path = Path(args.cleaned)
@@ -654,7 +657,8 @@ def main() -> None:
     else:
         raise ValueError("Provide either --rendered to generate checks or --checks to enrich an existing checks JSON.")
 
-    enriched = enrich_checks_schema(checks_data, cleaned_data)
+    contextualized = apply_audit_context_gates(checks_data, load_json(results_path) if args.rendered and results_path else None, args.audit_context)
+    enriched = enrich_checks_schema(contextualized, cleaned_data)
     save_json(output_path, enriched)
     if args.evidence_manifest:
         save_json(Path(args.evidence_manifest), evidence_manifest(enriched))

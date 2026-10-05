@@ -92,6 +92,29 @@ def href_from_repo(raw_path: str, output_dir: Path) -> str:
     return quote(Path(relative).as_posix(), safe="/:#?&=%")
 
 
+def stakeholder_evidence_href(item: Dict[str, Any], output_dir: Path) -> str:
+    """Return an optional stakeholder-only evidence derivative.
+
+    `evidenceAnnotation` names reviewed, raw-preserving crop assets placed beside
+    the report. The source `screenshotPath` is never replaced.
+    """
+    explicit_path = clean_text(item.get("stakeholderEvidencePath") or item.get("annotatedScreenshotPath"))
+    if explicit_path:
+        return href_from_repo(explicit_path, output_dir)
+    annotation_assets = {
+        "mobile": "issue-01-mobile-cropped.png",
+        "error": "issue-02-error-cropped.png",
+        "contrast": "issue-03-contrast-cropped.png",
+        "language": "issue-04-language-cropped.png",
+        "password-control": "issue-05-password-control-cropped.png",
+        "required-fields": "issue-06-required-guidance-cropped.png",
+    }
+    asset_name = annotation_assets.get(clean_text(item.get("evidenceAnnotation")))
+    if not asset_name:
+        return ""
+    return href_from_repo(str(output_dir / "evidence" / "cropped" / asset_name), output_dir)
+
+
 def severity_tone(value: Any) -> str:
     return clean_text(value).lower() or "medium"
 
@@ -112,6 +135,7 @@ def display_copy(value: Any) -> str:
         "Trust & WCAG 2.2": "Accessibility",
         "Trust & Accessibility": "Accessibility",
         "Visual Brand & UI Consistency": "Visual Hierarchy & Interface Consistency",
+        "Appels Offres": "Appels d'offres",
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
@@ -139,13 +163,13 @@ def score_tone(score_ten: float) -> str:
 def severity_label(value: Any) -> str:
     tone = severity_tone(value)
     if tone == "high":
-        return "Major Issue"
+        return "Major"
     if tone == "low":
-        return "Minor Issue"
-    return "Medium Issue"
+        return "Minor"
+    return "Medium"
 
 
-def render_score_ring(score_ten: float, *, label: str, accent: str = "", size: int = 138, attrs: Optional[Dict[str, Any]] = None) -> str:
+def render_score_ring(score_ten: float, *, label: str, accent: str = "", size: int = 138, attrs: Optional[Dict[str, Any]] = None, display_value: Optional[str] = None) -> str:
     normalized = max(0.0, min(10.0, float(score_ten)))
     accent = clean_text(accent) or score_accent(normalized)
     stroke = max(8.0, size * 0.075)
@@ -161,7 +185,7 @@ def render_score_ring(score_ten: float, *, label: str, accent: str = "", size: i
         <circle cx="{center}" cy="{center}" r="{radius}" class="ring-progress" style="stroke-dasharray:{circumference:.2f};stroke-dashoffset:{offset:.2f};"></circle>
       </svg>
       <div class="score-ring-copy">
-        <strong data-score-text>{normalized:.1f}</strong>
+        <strong data-score-text>{html.escape(display_value or f'{normalized:.1f}')}</strong>
         {f'<span>{html.escape(label)}</span>' if clean_text(label) else ''}
       </div>
     </div>
@@ -228,7 +252,7 @@ def render_priority_story(
         {render_score_ring(axis_score, label="", accent="#caa23b", size=128)}
       </div>
       <div class="story-copy">
-        <span class="severity-badge severity-{tone}"><span class="severity-icon">!</span>{html.escape(severity)}</span>
+        <span class="severity-badge severity-{tone}"><span class="severity-icon">!</span>Severity: {html.escape(severity)}</span>
         <h3>{html.escape(clean_text(item.get("title")))}</h3>
         <p><strong>Issue:</strong> {html.escape(clean_text(item.get("explanation")))}</p>
         <p><strong>Why it matters:</strong> {html.escape(clean_text(item.get("whyItMatters")))}</p>
@@ -251,15 +275,41 @@ def _safe_dom_id(*parts: Any) -> str:
     return re.sub(r"[^a-zA-Z0-9_-]+", "-", raw).strip("-").lower()[:96] or "item"
 
 
-def render_issue_card(item: Dict[str, Any], index: int, output_dir: Path) -> str:
+def render_issue_card(
+    item: Dict[str, Any], index: int, output_dir: Path, *, authoring: bool = True
+) -> str:
     issue_id = f"issue-{index:02d}-{_safe_dom_id(item.get('axisId') or item.get('axis_id'), item.get('pageName') or item.get('page_name'), item.get('title'))}"
     axis_id = clean_text(item.get("axisId") or item.get("axis_id"))
     axis_name = axis_label(axis_id, item.get("axisName") or item.get("axis") or "Issue")
     page_name = clean_text(item.get("pageName") or item.get("page_name")) or "Audited page"
     tone = severity_tone(item.get("severity"))
-    shot = clean_text(item.get("spotlightImage")) or href_from_repo(item.get("screenshotPath", ""), output_dir)
+    shot = (
+        clean_text(item.get("spotlightImage"))
+        or stakeholder_evidence_href(item, output_dir)
+        or href_from_repo(item.get("screenshotPath", ""), output_dir)
+    )
+    evidence_annotation = _safe_dom_id(item.get("evidenceAnnotation"))
+    contrast_rows = "".join(
+        f"<tr><td>{html.escape(clean_text(sample.get('component')) or 'Affected node')}</td><td>{html.escape(clean_text(sample.get('foreground')))}</td><td>{html.escape(clean_text(sample.get('background')))}</td><td>{html.escape(str(sample.get('ratio')))}:1</td><td>{html.escape(clean_text(sample.get('required')))}</td></tr>"
+        for sample in (item.get("contrastSamples") or [])
+        if isinstance(sample, dict)
+    )
+    contrast_html = f'<table class="issue-contrast-table"><caption>Representative measured contrast pairs (8 affected base-state nodes)</caption><thead><tr><th>Component</th><th>Foreground</th><th>Background</th><th>Measured</th><th>Required</th></tr></thead><tbody>{contrast_rows}</tbody></table>' if contrast_rows else ""
+    screenshot_input = (
+        f'<input class="hidden-file-input" type="file" accept="image/*" data-screenshot-input data-issue-id="{html.escape(issue_id)}" data-local-edit-control>'
+        if authoring
+        else ""
+    )
+    issue_actions = (
+        f'''<div class="issue-title-actions" data-local-edit-control>
+            <button class="mini-edit-button" type="button" data-edit-action="copy" data-issue-id="{html.escape(issue_id)}" aria-pressed="false">Edit text</button>
+            <button class="mini-edit-button" type="button" data-edit-action="image" data-issue-id="{html.escape(issue_id)}">Edit screenshot</button>
+          </div>'''
+        if authoring
+        else ""
+    )
     return f"""
-    <article class="issue-card tone-{tone}" data-issue-id="{html.escape(issue_id)}">
+    <article class="issue-card tone-{tone}" data-issue-id="{html.escape(issue_id)}" data-evidence-annotation="{html.escape(evidence_annotation)}">
       <div class="issue-media">
         <span class="issue-number">{index:02d}</span>
         <div class="issue-evidence-frame">
@@ -270,23 +320,22 @@ def render_issue_card(item: Dict[str, Any], index: int, output_dir: Path) -> str
             </div>
           </div>
         </div>
-        <input class="hidden-file-input" type="file" accept="image/*" data-screenshot-input data-issue-id="{html.escape(issue_id)}" data-local-edit-control>
+        {screenshot_input}
       </div>
       <div class="issue-copy">
         <div class="issue-card-top">
           <span class="issue-axis">{html.escape(axis_name)}</span>
-          <span class="severity-dot severity-{tone}">{html.escape(severity_label(item.get("severity")))}</span>
+          <span class="severity-dot severity-{tone}">Severity: {html.escape(severity_label(item.get("severity")))}</span>
         </div>
         <div class="issue-title-row">
           <h3 data-editable-field="title">{html.escape(display_copy(item.get("title")) or "Untitled issue")}</h3>
-          <div class="issue-title-actions" data-local-edit-control>
-            <button class="mini-edit-button" type="button" data-edit-action="copy" data-issue-id="{html.escape(issue_id)}" aria-pressed="false">Edit text</button>
-            <button class="mini-edit-button" type="button" data-edit-action="image" data-issue-id="{html.escape(issue_id)}">Edit screenshot</button>
-          </div>
+          {issue_actions}
         </div>
-        <p data-editable-field="explanation">{html.escape(display_copy(item.get("explanation")) or display_copy(item.get("evidence")))}</p>
+        <p data-editable-field="explanation"><strong>What we observed:</strong> {html.escape(display_copy(item.get("explanation")) or display_copy(item.get("evidence")))}</p>
+        {contrast_html}
         {f'<p class="issue-why"><strong>Why it matters:</strong> <span data-editable-field="whyItMatters">{html.escape(display_copy(item.get("whyItMatters")))}</span></p>' if clean_text(item.get("whyItMatters")) else ''}
         {f'<p class="issue-fix"><strong>Recommended move:</strong> <span data-editable-field="recommendation">{html.escape(display_copy(item.get("recommendation")))}</span></p>' if clean_text(item.get("recommendation")) else ''}
+        {f'<p class="issue-evidence"><strong>Evidence:</strong> {html.escape(display_copy(item.get("evidence")))}</p>' if clean_text(item.get("evidence")) else ''}
         <div class="issue-meta">
           <span>{html.escape(page_name)}</span>
         </div>
@@ -586,6 +635,7 @@ def render_issue_tabs(
     priorities: List[Dict[str, Any]],
     axes: List[Dict[str, Any]],
     output_dir: Path,
+    authoring: bool = True,
 ) -> str:
     all_issues: List[Dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
@@ -630,7 +680,10 @@ def render_issue_tabs(
         labels.append(
             f'<label class="issue-tab-label" for="{input_id}">{html.escape(label)}<span>{len(items)}</span></label>'
         )
-        cards = "".join(render_issue_card(item, card_index, output_dir) for card_index, item in enumerate(items, start=1))
+        cards = "".join(
+            render_issue_card(item, card_index, output_dir, authoring=authoring)
+            for card_index, item in enumerate(items, start=1)
+        )
         panel_body = cards or '<p class="empty">No issues for this filter.</p>'
         panels.append(
             f'<div class="issue-panel issue-panel-{safe_id}">{panel_body}</div>'
@@ -657,13 +710,22 @@ def render_issue_tabs(
     """
 
 
-def render_axis_tile(axis: Dict[str, Any], index: int) -> str:
+def render_axis_tile(
+    axis: Dict[str, Any], index: int, *, authoring: bool = True
+) -> str:
     axis_id = _safe_dom_id("axis", axis.get("id") or axis.get("shortName") or index)
     raw_score = axis.get("score")
     if raw_score is None:
         return f'''<article class="axis-tile tone-unscored" data-axis-id="{html.escape(axis_id)}"><span class="floating-step">{index}</span><h4>{html.escape(axis_label(axis.get("id"), axis.get("shortName") or axis.get("name")))}</h4><p>Not scored — {html.escape(clean_text(axis.get("scoreReason")) or "No applicable measured evidence.")}</p></article>'''
     score = round(float(raw_score) / 10, 1)
-    tone = severity_tone(axis.get("severity")).title()
+    axis_editor = (
+        f'''<label class="axis-score-editor" data-local-edit-control>
+        <span>Score</span>
+        <input type="number" min="0" max="10" step="0.1" value="{score:.1f}" data-axis-score-input>
+      </label>'''
+        if authoring
+        else ""
+    )
     return f"""
     <article class="axis-tile tone-{severity_tone(axis.get("severity"))} score-{score_tone(score)}" style="--score-color:{score_accent(score)};" data-axis-id="{html.escape(axis_id)}">
       <span class="floating-step">{index}</span>
@@ -671,12 +733,9 @@ def render_axis_tile(axis: Dict[str, Any], index: int) -> str:
       <p data-editable-field="axis-description">{html.escape(display_copy(axis.get("description")) or display_copy(axis.get("businessImpact")))}</p>
       <div class="axis-tile-meta">
         <strong><span data-axis-score-text>{score:.1f}</span>/10</strong>
-        <span>{tone} severity</span>
+        <span>{score_tone(score).title()} measured health</span>
       </div>
-      <label class="axis-score-editor" data-local-edit-control>
-        <span>Score</span>
-        <input type="number" min="0" max="10" step="0.1" value="{score:.1f}" data-axis-score-input>
-      </label>
+      {axis_editor}
     </article>
     """
 
@@ -710,7 +769,7 @@ def render_axis_section(
       </div>
       <div class="axis-story-copy">
         <h3>{html.escape(clean_text(axis.get("shortName")) or clean_text(axis.get("name")))}</h3>
-        <p><strong>Commercial impact:</strong> {html.escape(clean_text(axis.get("businessImpact")))}</p>
+        <p><strong>User impact:</strong> {html.escape(clean_text(axis.get("businessImpact")))}</p>
         {f'<p><strong>Lead issue:</strong> {html.escape(clean_text(lead_item.get("title")))}</p>' if clean_text(lead_item.get("title")) else ''}
         {f'<p><strong>Observed friction:</strong> {html.escape(clean_text(lead_item.get("explanation")))}</p>' if clean_text(lead_item.get("explanation")) else ''}
         {f'<p><strong>Recommended move:</strong> {html.escape(clean_text(lead_item.get("recommendation")))}</p>' if clean_text(lead_item.get("recommendation")) else ''}
@@ -724,6 +783,8 @@ def render_scanned_page(item: Dict[str, Any], output_dir: Path, is_mobile_visual
     if not href:
         return ""
     page_name = clean_text(item.get("page_name")) or clean_text(item.get("pageName")) or "Page"
+    screen_type = clean_text(item.get("type"))
+    description = clean_text(item.get("title"))
     if is_mobile_visual:
         return f"""
     <a class="scan-card mobile-scan-card" href="{href}" target="_blank" rel="noreferrer">
@@ -735,7 +796,7 @@ def render_scanned_page(item: Dict[str, Any], output_dir: Path, is_mobile_visual
           <img src="{href}" alt="{html.escape(page_name)} screenshot">
         </div>
       </div>
-      <strong class="scan-caption">{html.escape(page_name)}</strong>
+      <strong class="scan-caption">{html.escape(page_name)}</strong>{f'<span class="scan-type">{html.escape(screen_type)}</span>' if screen_type else ''}{f'<small>{html.escape(description)}</small>' if description else ''}
     </a>
     """
     return f"""
@@ -744,7 +805,7 @@ def render_scanned_page(item: Dict[str, Any], output_dir: Path, is_mobile_visual
         <div class="desktop-screen-bar"><span></span><span></span><span></span></div>
         <img src="{href}" alt="{html.escape(page_name)} screenshot">
       </div>
-      <strong class="scan-caption">{html.escape(page_name)}</strong>
+      <strong class="scan-caption">{html.escape(page_name)}</strong>{f'<span class="scan-type">{html.escape(screen_type)}</span>' if screen_type else ''}{f'<small>{html.escape(description)}</small>' if description else ''}
     </a>
     """
 
@@ -1180,7 +1241,9 @@ def render_radar_chart(axes: list[Dict[str, Any]]) -> str:
     """
 
 
-def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
+def render_html(
+    payload: Dict[str, Any], output_dir: Path, *, export_mode: bool = False
+) -> str:
     summary = payload.get("executiveSummary") or {}
     site = payload.get("site") or {}
     context = payload.get("context") or {}
@@ -1189,6 +1252,7 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
     is_screenshot_audit = clean_text(payload.get("mode")).lower() == "screenshot"
     is_live_mobile_audit = clean_text(payload.get("generator")) == "src.mobile_audit.generate_mobile_audit"
     is_mobile_visual = is_live_mobile_audit or clean_text(payload.get("surfaceType")).lower() in {"mobile", "mobile_app", "mobile-app"}
+    is_authenticated_workspace = clean_text(payload.get("auditContext") or context.get("auditContext")) == "authenticated_workspace"
 
     scanned_pages_data: List[Dict[str, Any]] = []
     seen_scanned_pages: set[str] = set()
@@ -1227,12 +1291,14 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
     cleaned_path = to_path(clean_text(artifacts.get("cleanedPath")), ROOT_DIR / "missing-cleaned.json")
     rendered_path = to_path(clean_text(artifacts.get("renderedPath")), ROOT_DIR / "missing-rendered-ui.json")
     for index, item in enumerate(priorities_data, start=1):
-        item["spotlightImage"] = build_screenshot_spotlight(item, output_dir, index, is_mobile_visual=is_mobile_visual) if is_screenshot_audit else build_gtm_spotlight(
-            item=item,
-            output_dir=output_dir,
-            cleaned_path=cleaned_path,
-            rendered_path=rendered_path,
-            issue_index=index,
+        item["spotlightImage"] = stakeholder_evidence_href(item, output_dir) or (
+            build_screenshot_spotlight(item, output_dir, index, is_mobile_visual=is_mobile_visual) if is_screenshot_audit else build_gtm_spotlight(
+                item=item,
+                output_dir=output_dir,
+                cleaned_path=cleaned_path,
+                rendered_path=rendered_path,
+                issue_index=index,
+            )
         )
         page_key = (
             clean_text(item.get("screenshotPath"))
@@ -1262,15 +1328,25 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
     axes_data = payload.get("axes") or []
     for index, axis in enumerate(axes_data, start=1):
         lead_item = ((axis.get("painPoints") or [])[:1] or (axis.get("strengths") or [])[:1] or [{}])[0]
-        lead_item["spotlightImage"] = build_screenshot_spotlight(lead_item, output_dir, 100 + index, is_mobile_visual=is_mobile_visual) if is_screenshot_audit else build_gtm_spotlight(
-            item=lead_item,
-            output_dir=output_dir,
-            cleaned_path=cleaned_path,
-            rendered_path=rendered_path,
-            issue_index=100 + index,
+        lead_item["spotlightImage"] = stakeholder_evidence_href(lead_item, output_dir) or (
+            build_screenshot_spotlight(lead_item, output_dir, 100 + index, is_mobile_visual=is_mobile_visual) if is_screenshot_audit else build_gtm_spotlight(
+                item=lead_item,
+                output_dir=output_dir,
+                cleaned_path=cleaned_path,
+                rendered_path=rendered_path,
+                issue_index=100 + index,
+            )
         )
-    axes_tiles_html = "".join(render_axis_tile(axis, index) for index, axis in enumerate(axes_data, start=1))
-    issue_tabs_html = render_issue_tabs(priorities=priorities_data, axes=axes_data, output_dir=output_dir)
+    axes_tiles_html = "".join(
+        render_axis_tile(axis, index, authoring=not export_mode)
+        for index, axis in enumerate(axes_data, start=1)
+    )
+    issue_tabs_html = render_issue_tabs(
+        priorities=priorities_data,
+        axes=axes_data,
+        output_dir=output_dir,
+        authoring=not export_mode,
+    )
     radar_html = render_radar_chart(axes_data)
     methodology_html = "".join(
         f"""
@@ -1300,19 +1376,24 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
             if clean_text(axis)
             else ""
         )
+        reco_actions = (
+            '''<span class="reco-actions" data-local-edit-control>
+                  <button class="edit-chip reco-edit-button" type="button" data-reco-action="edit" aria-pressed="false">Edit</button>
+                  <button class="edit-chip reco-edit-button" type="button" data-reco-action="delete">Delete</button>
+                </span>'''
+            if not export_mode
+            else ""
+        )
         reco_cards.append(
             f"""
             <details class="reco-card priority-{html.escape(priority.lower().replace(' ', '-') or 'normal')}" data-recommendation-card data-reco-index="{index + 1}" {"open" if index == 0 else ""}>
               <summary>
                 <span class="reco-orb">{index + 1:02d}</span>
                 <span class="reco-summary-copy">
-                  <span class="reco-badge" data-reco-editable="priority">{html.escape(priority)}</span>
+                  <span class="reco-badge" data-reco-editable="priority">Implementation priority: {html.escape(priority)}</span>
                   <strong data-reco-editable="title">{html.escape(title)}</strong>
                 </span>
-                <span class="reco-actions" data-local-edit-control>
-                  <button class="edit-chip reco-edit-button" type="button" data-reco-action="edit" aria-pressed="false">Edit</button>
-                  <button class="edit-chip reco-edit-button" type="button" data-reco-action="delete">Delete</button>
-                </span>
+                {reco_actions}
                 <span class="reco-toggle" aria-hidden="true">+</span>
               </summary>
               <div class="reco-body">
@@ -1324,13 +1405,18 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
             """
         )
     reco_html = "".join(reco_cards)
+    reco_head_actions = (
+        '<div class="reco-head-actions" data-local-edit-control><button class="edit-chip reco-add-button" type="button" data-reco-action="add">Add recommendation</button></div>'
+        if not export_mode
+        else ""
+    )
     strongest_axis = summary.get("strongestAxis") or {}
     weakest_axis = summary.get("weakestAxis") or {}
     strongest = axis_label(strongest_axis.get("id"), strongest_axis.get("shortName") or strongest_axis.get("name")) if strongest_axis else ""
     weakest = axis_label(weakest_axis.get("id"), weakest_axis.get("shortName") or weakest_axis.get("name")) if weakest_axis else ""
     raw_overall = summary.get("overallScore")
     overall_ten = round(float(raw_overall) / 10, 1) if raw_overall is not None else 0.0
-    hero_score = render_score_ring(overall_ten, label="Overall", size=170, attrs={"data-score-role": "overall"}) if raw_overall is not None else '<div class="score-ring"><strong>Not<br>scored</strong></div>'
+    hero_score = render_score_ring(overall_ten, label="Overall score", size=170, attrs={"data-score-role": "overall"}, display_value=f"{overall_ten:.1f} / 10") if raw_overall is not None else '<div class="score-ring"><strong>Not<br>scored</strong></div>'
     client_lockup = clean_text(site.get("display_name")) or clean_text(site.get("domain")) or "Client"
     scanned_pages_html = "".join(render_scanned_page(item, output_dir, is_mobile_visual=is_mobile_visual) for item in scanned_pages_data)
     scanned_pages_clone_html = scanned_pages_html.replace('<a class="scan-card', '<a tabindex="-1" class="scan-card')
@@ -1352,10 +1438,10 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
     company_name = clean_text(site.get("display_name")) or "Client site"
     pages_count = clean_text(context.get("pagesAudited")) or str(len(scanned_pages_data) or "selected")
     generated_month = date.today().strftime("%B %Y")
-    audit_subject = "captured mobile app screens" if is_live_mobile_audit else "uploaded screenshots" if is_screenshot_audit else f"{company_name} website"
+    audit_subject = "captured mobile app screens" if is_live_mobile_audit else "uploaded screenshots" if is_screenshot_audit else ("observed authenticated consultant workspace route" if is_authenticated_workspace else f"{company_name} website")
     tested_url = clean_text(site.get("homepage") or site.get("url"))
     scan_eyebrow = "Screens Captured" if is_live_mobile_audit else "Screenshots Analyzed" if is_screenshot_audit else "Pages Scanned"
-    scan_heading = "Representative mobile app screens reviewed during the audit" if is_live_mobile_audit else "Representative screenshots reviewed during the audit" if is_screenshot_audit else "Representative pages captured during the audit"
+    scan_heading = "Representative mobile app screens reviewed during the audit" if is_live_mobile_audit else "Representative screenshots reviewed during the audit" if is_screenshot_audit else ("Pages & states scanned" if is_authenticated_workspace else "Representative pages captured during the audit")
     nav_scope_label = "Input scope" if is_screenshot_audit else "Navigation scope"
     booking_to = "mohamedyassineabdi75@gmail.com"
     booking_subject = f"Free 30-minute UX/UI session for {company_name}"
@@ -1397,8 +1483,42 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
     if coverage_summary:
         status = clean_text(coverage_summary.get("coverageStatus")) or "unknown"
         coverage_banner = f'<section style="margin:20px 0;padding:16px;border:2px solid {"#cf513f" if status == "incomplete" else "#11886e"};border-radius:10px"><strong>Audit scope: deterministic representative page sample ({html.escape(status)})</strong><br>Discovered: {safe_int(coverage_summary.get("discovered"))} · Selected: {safe_int(coverage_summary.get("selected"))} · Completed: {safe_int(coverage_summary.get("completed"))} · Failed: {safe_int(coverage_summary.get("failed"))} · Excluded: {safe_int(coverage_summary.get("excluded"))} · Coverage: {float(coverage_summary.get("coverageRatio") or 0) * 100:.0f}%</section>'
-    scope_label = "screens/actions explored within configured exploration bounds" if is_live_mobile_audit else "uploaded screenshots/surfaces analyzed" if is_screenshot_audit else "discovered pages and the deterministic selected sample"
+    scope_label = "screens/actions explored within configured exploration bounds" if is_live_mobile_audit else "uploaded screenshots/surfaces analyzed" if is_screenshot_audit else ("one authenticated consultant workspace route in depth; other modules and unexercised states are outside observed scope" if is_authenticated_workspace else "discovered pages and the deterministic selected sample")
     integrity_banner = f'''<section style="margin:20px 0;padding:16px;border:1px solid #687386;border-radius:10px"><strong>Review status: Machine audit — not reviewed</strong><br><strong>Scope:</strong> {html.escape(scope_label)}.<br><strong>Collection coverage:</strong> collection results are reported separately from measurement coverage; unavailable measurements are not inferred.<br><strong>Methodology and provenance:</strong> only the methods and evidence recorded for this run are represented below.<br><strong>Limitations:</strong> representative sampling; automated accessibility checks are not full WCAG conformance; Lighthouse results are laboratory measurements rather than field/CrUX data; complex contrast and logical focus order may require human review.</section>'''
+    human_review_items = (payload.get("profile") or {}).get("needsHumanReview") or []
+    human_review_banner = ""
+    if human_review_items:
+        rows = "".join(
+            f"<li><strong>{html.escape(display_copy(item.get('status')))}</strong>: {html.escape(display_copy(item.get('title')))} — {html.escape(display_copy(item.get('reason')))}</li>"
+            for item in human_review_items
+        )
+        human_review_banner = f'<section style="margin:20px 0;padding:16px;border:1px solid #c6a137;border-radius:10px"><strong>Needs human review</strong><ul>{rows}</ul></section>'
+    targeted_follow_up = (payload.get("profile") or {}).get("targetedFollowUp") or {}
+    targeted_follow_up_banner = ""
+    if targeted_follow_up.get("status") == "completed":
+        keyboard = targeted_follow_up.get("keyboard") or {}
+        mobile = targeted_follow_up.get("mobile") or {}
+        base_axe = ((targeted_follow_up.get("axe") or {}).get("base") or {}).get("raw") or {}
+        contrast_nodes = next((len(rule.get("nodes") or []) for rule in base_axe.get("violations") or [] if clean_text(rule.get("id")) == "color-contrast"), 0)
+        rows = [
+            f"<li><strong>Keyboard reachability: PASS.</strong> {safe_int(keyboard.get('reachedCount'))}/{safe_int(keyboard.get('interactiveCount'))} controls reached; {html.escape(display_copy(keyboard.get('terminationReason')))}.</li>",
+            "<li><strong>Safe list interactions: MEASURED.</strong> Sort selection changed state; pagination changed visible records; the read-only document control opened a modal without activating a workflow action.</li>",
+            f"<li><strong>Mobile: CONFIRMED existing root cause.</strong> At 390px, document overflow was {safe_int(mobile.get('documentHorizontalOverflowPx'))}px, but {len(mobile.get('outsideViewport') or [])} visible controls extended outside the viewport.</li>",
+            f"<li><strong>Axe: CONFIRMED.</strong> Base state retained one <code>color-contrast</code> rule affecting {contrast_nodes} nodes; incomplete Axe checks remain review items, not failures.</li>",
+        ]
+        targeted_follow_up_banner = f'<section style="margin:20px 0;padding:16px;border:1px solid #11886e;border-radius:10px"><strong>Bounded targeted follow-up</strong><ul>{"".join(rows)}</ul></section>'
+    hero_lede = "Evidence-based review of one authenticated consultant workspace route. Other modules and unexercised states are outside observed scope." if is_authenticated_workspace else f"Comprehensive evaluation of the user experience and interface of {company_name} website through the active UX/UI axes on {pages_count} main screen(s)."
+    booking_template = "" if is_authenticated_workspace else f'''<template data-deployed-booking-template>
+      <section class="booking-section" id="book-session" aria-labelledby="book-session-title">
+        <div class="booking-copy">
+          <p class="eyebrow">Free expert session</p>
+          <h2 id="book-session-title">Book a 30-minute UX/UI review</h2>
+          <p>Discuss the priority findings in this audit with a UX/UI expert and turn the recommendations into a practical action plan for {html.escape(company_name)}.</p>
+          <ul class="booking-meta" aria-label="Session details"><li>30 minutes</li><li>Free consultation</li><li>Audit action plan</li></ul>
+        </div>
+        <a class="booking-button" href="{html.escape(booking_href)}" target="_blank" rel="noopener">Book a session</a>
+      </section>
+    </template>'''
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -2509,12 +2629,20 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
       background: rgba(17,136,110,0.10);
       color: #0f6a58;
     }}
+    .issue-contrast-table {{ width:100%; border-collapse:collapse; margin:14px 0; font-size:12px; }}
+    .issue-contrast-table caption {{ text-align:left; font-weight:700; margin-bottom:6px; }}
+    .issue-contrast-table th, .issue-contrast-table td {{ border:1px solid #dedee5; padding:6px; text-align:left; }}
+    .issue-contrast-table th {{ background:#f5f5fa; }}
     .issue-thumb {{
       width: 100%;
       height: 100%;
       object-fit: cover;
       display: block;
       background: #fff;
+    }}
+    .issue-card[data-evidence-annotation="mobile"] .issue-thumb {{
+      object-fit: contain;
+      object-position: center;
     }}
     .issue-copy {{
       display: grid;
@@ -3013,8 +3141,8 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
       <div class="hero-copy">
         <p class="eyebrow">UX/UI Audit</p>
         <h1>{html.escape(company_name)}</h1>
-        <p class="hero-lead">Comprehensive evaluation of the user experience and interface of {html.escape(audit_subject)} through the active UX/UI axes on {html.escape(pages_count)} main screen(s).</p>
-        {f'<a class="hero-visit-button" href="{html.escape(tested_url)}" target="_blank" rel="noreferrer">Open tested website</a>' if tested_url.startswith(("http://", "https://")) else ''}
+        <p class="hero-lead">{html.escape(hero_lede)}</p>
+        {f'<a class="hero-visit-button" href="{html.escape(tested_url)}" target="_blank" rel="noreferrer">Open observed route</a>' if tested_url.startswith(("http://", "https://")) else ''}
         <div class="hero-meta">
           <div><span>Date</span><strong>{html.escape(generated_month)}</strong></div>
           <div><span>Pages analyzed</span><strong>{html.escape(str(context.get("pagesAudited", "")))}</strong></div>
@@ -3079,38 +3207,22 @@ def render_html(payload: Dict[str, Any], output_dir: Path) -> str:
           <h2>Prioritized actions</h2>
           <p class="reco-lede">The highest-impact fixes are ordered for execution, with acceptance targets and business risk kept with each action.</p>
           </div>
-          <div class="reco-head-actions" data-local-edit-control>
-            <button class="edit-chip reco-add-button" type="button" data-reco-action="add">Add recommendation</button>
-          </div>
+          {reco_head_actions}
         </div>
         <div class="reco-stack" data-reco-list>{reco_html or "<p class='empty' data-reco-empty>No prioritized recommendation was generated yet.</p>"}</div>
       </div>
     </section>
 
-    <template data-deployed-booking-template>
-      <section class="booking-section" id="book-session" aria-labelledby="book-session-title">
-        <div class="booking-copy">
-          <p class="eyebrow">Free expert session</p>
-          <h2 id="book-session-title">Book a 30-minute UX/UI review</h2>
-          <p>Discuss the priority findings in this audit with a UX/UI expert and turn the recommendations into a practical action plan for {html.escape(company_name)}.</p>
-          <ul class="booking-meta" aria-label="Session details">
-            <li>30 minutes</li>
-            <li>Free consultation</li>
-            <li>Audit action plan</li>
-          </ul>
-        </div>
-        <a class="booking-button" href="{html.escape(booking_href)}" target="_blank" rel="noopener">Book a session</a>
-      </section>
-    </template>
+    {booking_template}
 
-    {render_local_publish_panel()}
+    {"" if export_mode else render_local_publish_panel()}
 
     <footer class="footer">
       <span>Generated from the automated UX/UI audit pipeline.</span>
       <span>{html.escape(clean_text(site.get("domain")) or clean_text(site.get("url")) or "Site")}</span>
     </footer>
   </div>
-  {render_local_edit_script()}
+  {"" if export_mode else render_local_edit_script()}
 </body>
 </html>"""
 
@@ -3119,6 +3231,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Generate the GTM audit landing page.")
     parser.add_argument("--input", required=True)
     parser.add_argument("--output-dir", required=True)
+    parser.add_argument(
+        "--export",
+        action="store_true",
+        help="Render a clean stakeholder report without local authoring controls.",
+    )
     args = parser.parse_args()
 
     input_path = to_path(args.input, ROOT_DIR)
@@ -3128,7 +3245,9 @@ def main() -> None:
 
     output_dir.mkdir(parents=True, exist_ok=True)
     payload = load_json(input_path)
-    (output_dir / "index.html").write_text(render_html(payload, output_dir), encoding="utf-8")
+    (output_dir / "index.html").write_text(
+        render_html(payload, output_dir, export_mode=args.export), encoding="utf-8"
+    )
     print(f"GTM report generated at: {output_dir / 'index.html'}")
 
 

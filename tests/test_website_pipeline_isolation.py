@@ -7,6 +7,8 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import pytest
+
 from src.audit.workspace import AuditWorkspace, atomic_write_json, atomic_write_text
 
 
@@ -59,6 +61,7 @@ def test_simulated_parallel_pipelines_use_only_their_own_explicit_artifacts(tmp_
             atomic_write_json(workspace.rendered_ui, {"pages": []})
         elif values[1:3] == ["-m", "src.audit.checks.run_sheet_checks"]:
             atomic_write_json(option(values, "--output"), {"sheets": {}})
+            atomic_write_json(option(values, "--evidence-manifest"), {"findings": []})
         elif values[1:3] == ["-m", "src.gtm_audit.generate_gtm_audit"]:
             results = option(values, "--results")
             consumed_results[results.parent.parent.name] = results.read_text(encoding="utf-8")
@@ -90,3 +93,35 @@ def test_simulated_parallel_pipelines_use_only_their_own_explicit_artifacts(tmp_
     assert workspace_a.audit_results != workspace_b.audit_results
     assert {option(command, "--audit-slug").name for command in packaging_commands} == {"pipeline-a", "pipeline-b"}
     assert {option(command, "--asset-root").name for command in packaging_commands} == {"pipeline-a", "pipeline-b"}
+
+
+def test_pipeline_forwards_optional_local_storage_state_to_browser_stages(tmp_path, monkeypatch):
+    pipeline = load_pipeline_module()
+    monkeypatch.setattr(pipeline, "ROOT_DIR", tmp_path)
+    monkeypatch.setattr(pipeline, "NAVIGATOR_DIR", tmp_path / "navigator")
+    commands: list[list[str]] = []
+
+    def fake_run(command, **_kwargs):
+        values = [str(value) for value in command]
+        commands.append(values)
+        if values[1].endswith("crawler.py"):
+            atomic_write_json(option(values, "--json-out"), {"homepage": "https://example.test/", "navigation": []})
+            return
+        if values[1:3] == ["-m", "src.main"]:
+            raise RuntimeError("stop after browser-stage command capture")
+        raise AssertionError(f"Unexpected pipeline command: {values}")
+
+    monkeypatch.setattr(pipeline, "run_command", fake_run)
+    args = pipeline_args("authenticated-pipeline")
+    args.storage_state = "runtime/auth/example.test/session.json"
+    args.auth_login_url = "https://example.test/auth/login"
+    args.allowed_dependency_url = ["https://api.example.test/"]
+
+    with pytest.raises(RuntimeError, match="command capture"):
+        pipeline.run_pipeline(args)
+
+    crawler_command, page_command = commands
+    for command in (crawler_command, page_command):
+        assert command[command.index("--storage-state") + 1] == args.storage_state
+        assert command[command.index("--auth-login-url") + 1] == args.auth_login_url
+        assert command[command.index("--allowed-dependency-url") + 1] == "https://api.example.test/"

@@ -35,9 +35,12 @@ from src.security.network_policy import (
     chromium_host_resolver_rules,
     fetch_public_text,
     install_playwright_network_guard,
+    sanitize_audit_ssl_keylogfile,
+    validate_dependency_origin,
     validate_public_url,
 )
 from src.audit.workspace import atomic_write_json
+from src.audit.auth_session import resolve_storage_state, validate_authenticated_page
 from src.audit.discovery import canonical_url, merge_candidates, related_site
 
 try:
@@ -206,6 +209,9 @@ class CrawlOptions:
     locale: str = "auto"
     robots_policy: str = "respect"
     include_auth_pages: bool = False
+    storage_state: Path | None = None
+    auth_login_url: str = ""
+    dependency_origins: List[Any] | None = None
 
 
 @dataclass
@@ -3035,6 +3041,7 @@ async def crawl_site(homepage: str, options: CrawlOptions) -> Dict[str, Any]:
     start_time = time.perf_counter()
     homepage = validate_public_url(normalize_url(homepage)).url
     validated_homepage = validate_public_url(homepage)
+    validated_destinations = [validated_homepage, *(options.dependency_origins or [])]
     parsed = urlparse(homepage)
     if not parsed.path:
         homepage = f"{parsed.scheme}://{parsed.netloc}/"
@@ -3055,38 +3062,50 @@ async def crawl_site(homepage: str, options: CrawlOptions) -> Dict[str, Any]:
             debug_log(options.debug, "Launching Chromium")
             browser: Browser = await pw.chromium.launch(
                 headless=True,
-                args=[f"--host-resolver-rules={chromium_host_resolver_rules([validated_homepage])}"],
+                args=[f"--host-resolver-rules={chromium_host_resolver_rules(validated_destinations)}"],
             )
 
             browser_locale = options.locale if options.locale != "auto" else None
             language_header = browser_locale or ""
-            desktop_context = await browser.new_context(
-                user_agent=user_agent,
-                locale=browser_locale,
-                extra_http_headers={**DEFAULT_HEADERS, **({"Accept-Language": language_header} if language_header else {})},
-                viewport={"width": 1440, "height": 1200},
-                java_script_enabled=True,
-                is_mobile=False,
-                service_workers="block",
-                ignore_https_errors=False,
-            )
+            context_options = {
+                "user_agent": user_agent,
+                "locale": browser_locale,
+                "extra_http_headers": {**DEFAULT_HEADERS, **({"Accept-Language": language_header} if language_header else {})},
+                "viewport": {"width": 1440, "height": 1200},
+                "java_script_enabled": True,
+                "is_mobile": False,
+                "service_workers": "block",
+                "ignore_https_errors": False,
+            }
+            if options.storage_state:
+                context_options["storage_state"] = str(options.storage_state)
+            desktop_context = await browser.new_context(**context_options)
 
-            mobile_context = await browser.new_context(
-                user_agent=user_agent,
-                locale=browser_locale,
-                extra_http_headers={**DEFAULT_HEADERS, **({"Accept-Language": language_header} if language_header else {})},
-                viewport={"width": 390, "height": 844},
-                java_script_enabled=True,
-                is_mobile=True,
-                has_touch=True,
-                service_workers="block",
-                ignore_https_errors=False,
-            )
+            mobile_context_options = {
+                "user_agent": user_agent,
+                "locale": browser_locale,
+                "extra_http_headers": {**DEFAULT_HEADERS, **({"Accept-Language": language_header} if language_header else {})},
+                "viewport": {"width": 390, "height": 844},
+                "java_script_enabled": True,
+                "is_mobile": True,
+                "has_touch": True,
+                "service_workers": "block",
+                "ignore_https_errors": False,
+            }
+            if options.storage_state:
+                mobile_context_options["storage_state"] = str(options.storage_state)
+            mobile_context = await browser.new_context(**mobile_context_options)
 
-            await install_playwright_network_guard(desktop_context, [validated_homepage])
-            await install_playwright_network_guard(mobile_context, [validated_homepage])
+            await install_playwright_network_guard(desktop_context, validated_destinations)
+            await install_playwright_network_guard(mobile_context, validated_destinations)
 
             try:
+                if options.storage_state:
+                    await validate_authenticated_page(
+                        desktop_context, homepage, login_url=options.auth_login_url,
+                        timeout_ms=options.timeout * 1000,
+                    )
+                    print("Authenticated session validation passed.")
                 desktop_result = await crawl_single_view(desktop_context, homepage, options, mobile=False)
                 mobile_result = await crawl_single_view(mobile_context, homepage, options, mobile=True)
 
@@ -3141,11 +3160,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--locale", default="auto", help="Requested browser locale; auto preserves the site's default behavior")
     parser.add_argument("--robots-policy", choices=("respect", "report_only"), default=os.getenv("UX_AUDIT_ROBOTS_POLICY", "respect"), help="Robots policy for automatic page sampling")
     parser.add_argument("--include-auth-pages", action="store_true", help="Allow public authentication pages in discovery sampling; credentials are never submitted")
+    parser.add_argument("--storage-state", default=os.getenv("UX_AUDIT_STORAGE_STATE", ""), help="Optional local Playwright storage state under runtime/auth")
+    parser.add_argument("--auth-login-url", default=os.getenv("UX_AUDIT_AUTH_LOGIN_URL", ""), help="Optional login URL used only to detect expired session state")
+    parser.add_argument("--allowed-dependency-url", action="append", default=[], help="Explicit public dependency origin allowed only for this crawl (repeatable).")
     return parser.parse_args()
 
 
 async def async_main() -> None:
     args = parse_args()
+    if sanitize_audit_ssl_keylogfile():
+        print("Ignored a machine-injected SSLKEYLOGFILE for this audit process.")
+    homepage = validate_public_url(normalize_url(args.url))
+    auth_login_url = args.auth_login_url.strip()
+    if auth_login_url:
+        checked_login = validate_public_url(auth_login_url)
+        if checked_login.hostname != homepage.hostname:
+            raise RuntimeError("Authenticated login URL must use the selected audit host.")
+        auth_login_url = checked_login.url
     options = CrawlOptions(
         timeout=max(5, args.timeout),
         debug=args.debug,
@@ -3154,13 +3185,16 @@ async def async_main() -> None:
         locale=args.locale,
         robots_policy=args.robots_policy,
         include_auth_pages=args.include_auth_pages,
+        storage_state=resolve_storage_state(args.storage_state),
+        auth_login_url=auth_login_url,
+        dependency_origins=[validate_dependency_origin(item) for item in args.allowed_dependency_url],
     )
 
     output_file = Path(args.json_out) if args.json_out else DEFAULT_OUTPUT_FILE
     output_file.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        result = await crawl_site(args.url, options)
+        result = await crawl_site(homepage.url, options)
 
         atomic_write_json(output_file, result)
 

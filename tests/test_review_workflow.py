@@ -42,7 +42,7 @@ def test_review_ownership_and_explicit_validation(api_server):
     assert follow_up["reviewStatus"] == "in_review" and follow_up["baseRevisionId"] == revision["revisionId"]
 
 
-def test_publication_binds_explicit_validated_revision(api_server, monkeypatch):
+def test_publication_binds_explicit_saved_revision(api_server, monkeypatch):
     audit = create_audit(api_server); job_id = audit["id"]; path = f"/api/audits/{job_id}/revisions"
     server = __import__("src.ui.server", fromlist=["server"])
     server.JOB_STORE.update(job_id, status="running"); server.JOB_STORE.update(job_id, status="completed")
@@ -54,7 +54,8 @@ def test_publication_binds_explicit_validated_revision(api_server, monkeypatch):
     publication = json.loads(body)["publication"]
     assert status == 200 and publication["revisionId"] == first["revisionId"] and publication["publicationStatus"] == "succeeded"
     assert second["revisionId"] != publication["revisionId"]
-    assert request(api_server, "POST", f"/api/audits/{job_id}/publish", token="token-a", body={"revisionId": second["revisionId"]})[0] == 409
+    latest_status, _, latest_body = request(api_server, "POST", f"/api/audits/{job_id}/publish", token="token-a", body={"revisionId": second["revisionId"]})
+    assert latest_status == 200 and json.loads(latest_body)["publication"]["revisionId"] == second["revisionId"]
 
 
 def test_reviewed_report_preserves_complete_findings_and_escapes_reviewer_text():

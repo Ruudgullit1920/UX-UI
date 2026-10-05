@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import pytest
 
 from src.security.network_policy import (
     UnsafeURLError,
+    browser_request_is_allowed,
     fetch_public_text,
     install_playwright_network_guard,
+    sanitize_audit_ssl_keylogfile,
+    validate_dependency_origin,
     validate_public_url,
 )
 from conftest import FakeRequest, FakeRoute
@@ -100,3 +104,38 @@ def test_browser_guard_blocks_dns_rebinding(monkeypatch, playwright_context, pub
     route = FakeRoute()
     asyncio.run(playwright_context.handler(route, FakeRequest("https://example.com/api")))
     assert route.action == "abort"
+
+
+def test_explicit_dependency_origin_is_required_for_authenticated_api_host():
+    frontend = validate_public_url("http://4.209.241.167/")
+    dependency = validate_dependency_origin("http://4.209.37.93/")
+
+    assert not browser_request_is_allowed("http://4.209.37.93/auth/me", [frontend])
+    assert browser_request_is_allowed("http://4.209.37.93/auth/me", [frontend, dependency])
+    assert browser_request_is_allowed("http://4.209.37.93/projects", [frontend, dependency])
+
+
+def test_explicit_dependency_does_not_authorize_other_origins_or_restricted_redirects():
+    frontend = validate_public_url("http://4.209.241.167/")
+    dependency = validate_dependency_origin("http://4.209.37.93/")
+
+    assert not browser_request_is_allowed("http://1.1.1.1/", [frontend, dependency])
+    assert not browser_request_is_allowed("http://169.254.169.254/latest/meta-data/", [frontend, dependency])
+    assert not browser_request_is_allowed("https://4.209.37.93/auth/me", [frontend, dependency])
+
+
+def test_normal_public_audit_origin_behavior_is_unchanged(public_resolver):
+    homepage = validate_public_url("https://example.com/", resolver=public_resolver)
+
+    assert browser_request_is_allowed("https://example.com/path", [homepage], resolver=public_resolver)
+    with pytest.raises(UnsafeURLError):
+        validate_dependency_origin("https://example.com/path", resolver=public_resolver)
+
+
+def test_only_machine_injected_ssl_keylog_device_paths_are_sanitized(monkeypatch):
+    monkeypatch.setenv("SSLKEYLOGFILE", r"\\.\avgMonFltProxy\audit")
+    assert sanitize_audit_ssl_keylogfile()
+    assert "SSLKEYLOGFILE" not in os.environ
+
+    monkeypatch.setenv("SSLKEYLOGFILE", r"C:\audit\ssl-keys.log")
+    assert not sanitize_audit_ssl_keylogfile()

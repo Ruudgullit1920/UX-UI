@@ -5,5 +5,6 @@ import "./styles/tokens.css";
 import "./styles/base.css";
 import "./styles/layout.css";
 import "./styles/audit.css";
-import "./styles/review.css";
+import "./styles/workspace.css";
+import "./styles/liquid.css";
 createRoot(document.getElementById("root")).render(<App />);
