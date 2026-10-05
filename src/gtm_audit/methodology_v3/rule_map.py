@@ -63,6 +63,25 @@ KEY_CRITERIA: dict[str, str] = {
 }
 
 
+# v2 emits axe results as "axe:<rule id>"; the registry only knows "axe:*".
+# Common axe rules map to the specific criterion so they dedupe with the custom
+# and AI detectors of the same defect; unlisted ones fall back to "axe:*".
+AXE_CRITERIA: dict[str, str] = {
+    **dict.fromkeys(["color-contrast", "color-contrast-enhanced"], "accessibility.text_contrast"),
+    **dict.fromkeys(["image-alt", "role-img-alt", "input-image-alt", "svg-img-alt", "area-alt", "object-alt"], "accessibility.text_alternatives"),
+    **dict.fromkeys(["label", "button-name", "link-name", "input-button-name", "select-name", "aria-input-field-name",
+                     "aria-toggle-field-name", "aria-command-name", "label-title-only"], "accessibility.names_labels"),
+    **dict.fromkeys(["heading-order", "page-has-heading-one", "empty-heading", "landmark-one-main", "landmark-unique",
+                     "landmark-no-duplicate-main", "region", "bypass", "list", "listitem"], "accessibility.structure_headings_landmarks"),
+    "target-size": "accessibility.target_size",
+    "meta-viewport": "accessibility.reflow_zoom",
+    **dict.fromkeys(["scrollable-region-focusable", "nested-interactive"], "accessibility.keyboard_operable"),
+    "tabindex": "accessibility.focus_order",
+    **dict.fromkeys(["blink", "marquee"], "accessibility.motion_control"),
+    "link-in-text-block": "accessibility.non_text_contrast",
+}
+
+
 def _build() -> dict[str, str]:
     mapping: dict[str, str] = {}
     for key, meta in RULE_REGISTRY.items():
@@ -86,5 +105,6 @@ def criterion_for_rule(rule_key: str) -> str | None:
         if candidate.strip() in RULE_CRITERION_MAP_V3:
             return RULE_CRITERION_MAP_V3[candidate.strip()]
     if normalized.startswith("axe"):
-        return RULE_CRITERION_MAP_V3.get("axe:*")
+        axe_rule = normalized.split(":", 1)[1].strip() if ":" in normalized else ""
+        return AXE_CRITERIA.get(axe_rule) or RULE_CRITERION_MAP_V3.get("axe:*")
     return None

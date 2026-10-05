@@ -54,7 +54,7 @@ def test_b_ambiguous_action_wording_hurts_content_only(methodology):
 def test_c_axe_custom_and_ai_on_one_defect_is_one_consequence(methodology):
     rows = _with(_clean(methodology),
                  _fail(criterion_for_rule("Content:16"), findingId="custom-1"),
-                 _fail("accessibility.text_contrast", findingId="axe-1"),
+                 _fail(criterion_for_rule("axe:color-contrast"), findingId="axe-1"),
                  _fail("accessibility.text_contrast", "high", findingId="ai-1"))
     scores = _score(methodology, rows)
     assert _hurt_axes(scores) == {"accessibility"}

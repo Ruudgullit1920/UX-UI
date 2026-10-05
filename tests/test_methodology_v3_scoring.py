@@ -369,3 +369,68 @@ def test_seeded_product_type_weights(methodology):
     assert weights["ecommerce"] == {"trust": 1.5, "usability": 1.3, "performance": 1.2}
     assert weights["finance"] == {"trust": 1.6, "accessibility": 1.2}
     assert weights["public_service"] == {"accessibility": 1.6, "content": 1.3}
+
+
+# --- Final review fixes -----------------------------------------------------
+
+from src.gtm_audit.methodology_v3.scoring import unscored_rows
+
+
+def test_overall_skips_axes_with_nothing_evaluated(methodology):
+    empty = _axis_score(methodology, "trust", 0.0, maturity=1)
+    empty = empty.__class__(**{**empty.__dict__, "coverage": Coverage(0, 9, (), ())})
+    scores = _all_axes(methodology, [100] * 6) + [empty]
+    result = overall_v3(scores, None, methodology)
+    assert result.axes_scored == 6 and result.score == 100 and result.maturity == 5
+    assert "trust" not in result.weights_used
+
+
+def test_location_less_rows_from_a_generator_never_collapse(methodology):
+    axis = methodology.axis("usability")
+    passes = _without(_passes(axis), "usability.form_input_effort")
+
+    def stream():  # a streaming reader that reuses one buffer dict per row
+        yield from passes
+        buffer = {}
+        for _ in range(3):
+            buffer.clear()
+            buffer.update({"criterionId": "usability.form_input_effort", "outcome": "fail", "severity": "low"})
+            yield buffer
+
+    assert score_axis_v3(stream(), axis, "website", methodology.scoring).scored_defects == 3
+
+
+def test_severity_enum_is_honoured(methodology):
+    axis = methodology.axis("usability")
+    rows = _without(_passes(axis), "usability.form_input_effort") + [_fail("usability.form_input_effort", Severity.CRITICAL)]
+    result = score_axis_v3(rows, axis, "website", methodology.scoring)
+    assert result.worst_severity is Severity.CRITICAL and result.score == 70
+
+
+def test_region_only_findings_on_one_page_stay_distinct(methodology):
+    axis = methodology.axis("visual")
+    region = lambda y: {"x": 0, "y": y, "width": 100, "height": 40}
+    rows = _without(_passes(axis), "visual.visual_hierarchy") + [
+        _fail("visual.visual_hierarchy", elementIds=[], screenshotRegion=region(0), findingId="a"),
+        _fail("visual.visual_hierarchy", elementIds=[], screenshotRegion=region(500), findingId="b"),
+    ]
+    assert score_axis_v3(rows, axis, "website", methodology.scoring).scored_defects == 2
+
+
+def test_page_types_limit_applicability(methodology):
+    axis = methodology.axis("usability")
+    rows = [row for row in _passes(axis) if "any" in methodology.criterion(row["criterionId"]).page_types]
+    result = score_axis_v3(rows, axis, "website", methodology.scoring, page_types={"article"})
+    assert "usability.form_input_effort" in result.coverage.not_applicable_for_target
+    assert result.coverage.not_evaluated == ()
+    assert result.coverage.evaluated == result.coverage.applicable
+
+
+def test_page_types_omitted_keeps_every_target_criterion(methodology):
+    axis = methodology.axis("usability")
+    assert score_axis_v3([], axis, "website", methodology.scoring).coverage.applicable == len(axis.criteria)
+
+
+def test_unknown_criterion_rows_are_reported_as_unscored(methodology):
+    rows = [{"criterionId": "usability.typo", "findingId": "x"}, {"criterionId": "trust.pricing_transparency"}, {"outcome": "fail"}]
+    assert [row.get("findingId") for row in unscored_rows(rows, methodology)] == ["x"]

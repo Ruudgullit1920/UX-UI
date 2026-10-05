@@ -15,6 +15,7 @@ DEFAULT_CONFIG_PATH = ROOT_DIR / "shared" / "config" / "audit_methodology_v3.jso
 AXIS_IDS = ("usability", "navigation", "visual", "content", "accessibility", "performance", "trust")
 SEVERITY_KEYS = frozenset({"critical", "high", "medium", "low"})
 WEIGHTS = {"core": 3, "supporting": 1}
+PAGE_TYPES = frozenset({"any", "form", "checkout", "listing", "article", "dashboard"})
 STANDARD_PATTERN = re.compile(
     r"^(WCAG22:\d\.\d+\.\d+|NNG:H(10|[1-9])|CWV:(LCP|INP|CLS|FCP|TTFB)|GESTALT:\w+"
     r"|BAYMARD:[\w-]+|ISO9241:[\w.-]+|NNG:[\w-]+|STANFORD:[\w-]+)$"
@@ -58,6 +59,14 @@ class Criterion(_Frozen):
         unknown = [item for item in value if not STANDARD_PATTERN.match(item)]
         if unknown:
             raise ValueError(f"unknown standard reference(s): {unknown}")
+        return value
+
+    @field_validator("page_types")
+    @classmethod
+    def _known_page_types(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        unknown = sorted(set(value) - PAGE_TYPES)
+        if unknown:
+            raise ValueError(f"unknown page type(s): {unknown}; expected {sorted(PAGE_TYPES)}")
         return value
 
     @property

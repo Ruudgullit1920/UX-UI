@@ -61,8 +61,20 @@ def test_aggregated_keys_resolve_through_their_parts():
     assert criterion_for_rule("Unknown:1, Content:16") == "accessibility.text_contrast"
 
 
-def test_axe_rules_fall_back_to_the_axe_wildcard():
-    assert criterion_for_rule("axe:color-contrast") == RULE_CRITERION_MAP_V3["axe:*"]
+@pytest.mark.parametrize("key, expected", [
+    ("axe:color-contrast", "accessibility.text_contrast"),
+    ("axe:image-alt", "accessibility.text_alternatives"),
+    ("axe:button-name", "accessibility.names_labels"),
+    ("axe:label", "accessibility.names_labels"),
+    ("axe:heading-order", "accessibility.structure_headings_landmarks"),
+    ("axe:target-size", "accessibility.target_size"),
+])
+def test_axe_rules_map_to_their_specific_criterion(key, expected):
+    assert criterion_for_rule(key) == expected
+
+
+def test_unlisted_axe_rules_fall_back_to_the_axe_wildcard():
+    assert criterion_for_rule("axe:aria-allowed-attr") == RULE_CRITERION_MAP_V3["axe:*"]
 
 
 def test_map_only_names_real_criteria(methodology):

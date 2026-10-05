@@ -11,7 +11,7 @@ from .config import (
     load_methodology,
 )
 from .eligibility import is_score_eligible, normalize_confidence
-from .scoring import AxisScore, Coverage, OverallScore, dedupe_key, maturity_for, overall_v3, score_axis_v3
+from .scoring import AxisScore, Coverage, OverallScore, dedupe_key, maturity_for, overall_v3, score_axis_v3, unscored_rows
 from .severity import Severity, escalate
 
 __all__ = [
@@ -35,4 +35,5 @@ __all__ = [
     "normalize_confidence",
     "overall_v3",
     "score_axis_v3",
+    "unscored_rows",
 ]

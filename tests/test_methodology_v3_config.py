@@ -289,3 +289,9 @@ def test_defect_families_are_not_shared_across_axes(shared):
     for axis in shared.axes:
         for c in axis.criteria:
             assert owner.setdefault(c.logical_defect_family, axis.id) == axis.id, c.logical_defect_family
+
+
+def test_page_types_must_use_known_vocabulary():
+    def mutate(d):
+        d["axes"][0]["criteria"][0]["page_types"] = ["chekout"]
+    _invalid(mutate)
