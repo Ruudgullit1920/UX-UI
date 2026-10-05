@@ -2346,7 +2346,7 @@
             "en": "Optimise website speed.",
             "fr": "Optimiser la vitesse du site."
           },
-          "logical_defect_family": "perf-lcp"
+          "logical_defect_family": "perf-page-speed"
         },
         {
           "id": "performance.inp",
@@ -2387,7 +2387,7 @@
             "en": "Make the site more responsive.",
             "fr": "Rendre le site plus réactif."
           },
-          "logical_defect_family": "perf-inp"
+          "logical_defect_family": "perf-page-speed"
         },
         {
           "id": "performance.cls",
@@ -2470,7 +2470,7 @@
             "en": "Improve server performance.",
             "fr": "Améliorer les performances serveur."
           },
-          "logical_defect_family": "perf-first-render"
+          "logical_defect_family": "perf-page-speed"
         },
         {
           "id": "performance.asset_weight",
