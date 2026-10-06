@@ -29,6 +29,7 @@ from dotenv import load_dotenv
 from PIL import Image, UnidentifiedImageError
 
 from src.audit.workspace import AuditWorkspace, atomic_write_json, atomic_write_text
+from src.gtm_audit.vision_client import vision_backend
 from src.report.roadmap_teaser import expert_booking_config, findings_from_report, teaser_payload
 from src.jobs import AuditStorageManager, AuditWorker, JobStatus, JobStore
 from src.security.auth import AuthenticatedUser, AuthenticationError, authenticate_bearer, validate_auth_configuration
@@ -1262,7 +1263,10 @@ def _run_audit_job(job_id: str) -> None:
         "--job-id",
         job_id,
     ]
-    if mode == "gtm" and _env_flag("GTM_SKIP_VISION", default=False):
+    # With the Claude CLI backend, vision runs after the report is ready (see _start_ai_review),
+    # so the timed audit never waits on it.
+    claude_review = mode == "gtm" and vision_backend() == "claude_cli"
+    if mode == "gtm" and (claude_review or _env_flag("GTM_SKIP_VISION", default=False)):
         pipeline_command.append("--skip-vision")
     profile = _depth_profile(job.get("depth"))
     started_at = float(job.get("startedAt") or _now())
@@ -1308,6 +1312,42 @@ def _run_audit_job(job_id: str) -> None:
         resultUrl=local_report_url,
         error="",
     )
+    if claude_review:
+        _start_ai_review(job_id)
+
+
+def _start_ai_review(job_id: str) -> None:
+    """Run the Claude vision review in the background; the report is already usable."""
+    _set_job(job_id, aiReviewStatus="running", aiReviewError="")
+    threading.Thread(target=_run_ai_review, args=(job_id,), name=f"ai-review-{job_id}", daemon=True).start()
+
+
+def _run_ai_review(job_id: str) -> None:
+    """Regenerate the GTM audit with vision from the saved evidence, then repackage the report."""
+    workspace = AuditWorkspace(job_id, AUDITS_DIR)
+    timeout = float(os.getenv("GTM_AI_REVIEW_TIMEOUT_SEC", "420"))
+    commands = [
+        [sys.executable, "-m", "src.gtm_audit.generate_gtm_audit",
+         "--website-menu", str(workspace.website_menu), "--cleaned", str(workspace.html_cleaned),
+         "--rendered", str(workspace.rendered_ui), "--checks", str(workspace.checks),
+         "--output", str(workspace.gtm_audit), "--results", str(workspace.audit_results),
+         "--coverage", str(workspace.coverage_manifest), "--audit-context", "public_website"],
+        [sys.executable, "-m", "src.gtm_audit.generate_gtm_report",
+         "--input", str(workspace.gtm_audit), "--output-dir", str(workspace.report)],
+    ]
+    env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+    try:
+        for command in commands:
+            completed = subprocess.run(command, cwd=str(ROOT_DIR), env=env, capture_output=True, text=True,
+                                       encoding="utf-8", errors="replace", timeout=timeout)
+            if completed.returncode != 0:
+                detail = (completed.stdout or completed.stderr or "").strip().splitlines()[-1:] or [""]
+                raise RuntimeError(f"{command[2]} exited with {completed.returncode}: {detail[0][:200]}")
+        result_url = _package_local_report(workspace.report, workspace.publication, job_id)
+    except Exception as exc:  # the machine report stays available either way
+        _set_job(job_id, aiReviewStatus="failed", aiReviewError=f"AI review did not finish: {exc}"[:400])
+        return
+    _set_job(job_id, aiReviewStatus="completed", aiReviewError="", resultUrl=result_url)
 
 
 def _run_screenshot_audit_job(job_id: str) -> None:

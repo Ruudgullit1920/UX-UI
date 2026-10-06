@@ -705,3 +705,26 @@ def test_website_audit_depth_can_be_deep(ui):
     page, _, _ = ui
     page.get_by_role("radio", name="Deep").check()
     assert start(page)["depth"] == "deep"
+
+
+def test_ai_review_status_updates_after_the_report_is_ready(ui):
+    page, _, _ = ui
+    complete(page)
+    job_id = page.evaluate("sessionStorage.getItem('uxui-current-audit')")
+    server.JOB_STORE.update(job_id, aiReviewStatus="running")
+    page.goto(page.url.split("/report/")[0] + "/app")
+    expect(page.get_by_text("AI review in progress")).to_be_visible(timeout=10000)
+    server.JOB_STORE.update(job_id, aiReviewStatus="completed")
+    expect(page.get_by_text("AI review added to the report")).to_be_visible(timeout=10000)
+
+
+def test_ai_review_failure_keeps_the_report_available(ui):
+    page, _, _ = ui
+    complete(page)
+    job_id = page.evaluate("sessionStorage.getItem('uxui-current-audit')")
+    server.JOB_STORE.update(job_id, aiReviewStatus="failed", aiReviewError="AI review did not finish: Claude CLI is not available")
+    page.reload()
+    expect(page.get_by_text("The AI review didn’t finish")).to_be_visible(timeout=10000)
+    page.goto(page.url.split("/report/")[0] + "/app")
+    expect(page.get_by_text("The AI review didn’t finish")).to_be_visible(timeout=10000)
+    expect(page.get_by_role("link", name="Open report")).to_be_visible()
