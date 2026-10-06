@@ -71,4 +71,4 @@ def test_review_source_refuses_symlinks(api_server, monkeypatch):
     source.write_text(json.dumps({"findings": [{"findingId": "f1", "title": "Must not read"}]}), encoding="utf-8")
     monkeypatch.setattr(server, "_contains_symlink", lambda *_args: True)
     context, _ = server._machine_report_context(job["id"], None)
-    assert context["completeFindings"] == []
+    assert context["findings"] == []

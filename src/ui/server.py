@@ -476,11 +476,28 @@ def _machine_audit_data(job_id: str) -> dict[str, Any]:
     return machine if isinstance(machine, dict) else {}
 
 
+CLIENT_REPORT_CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com"
+
+
 def _machine_report_context(job_id: str, revision: dict[str, Any] | None) -> tuple[dict[str, Any], str]:
-    machine = _machine_audit_data(job_id)
-    from src.report.reviewed_report import render_reviewed_report, reviewed_report_context
-    context = reviewed_report_context(audit_id=job_id, machine=machine, revision=revision)
-    return context, render_reviewed_report(context)
+    """The EY Studio+ client report: in-app view, deployed snapshot and PDF all render from here."""
+    from src.report.client.context import build_client_report_context
+    from src.report.client.crops import crop_all
+    from src.report.client.render import render_client_report
+
+    created = (JOB_STORE.get(job_id) or {}).get("createdAt")
+    audit_date = time.strftime("%Y-%m-%d", time.localtime(created)) if isinstance(created, (int, float)) else None
+    context = build_client_report_context(audit_id=job_id, machine=_machine_audit_data(job_id), revision=revision, audit_date=audit_date)
+    return context, render_client_report(context, crop_all(context["findings"]))
+
+
+def _client_report_revision(job_id: str, query: str) -> tuple[bool, dict[str, Any] | None]:
+    """Resolve the optional ?revision= of a client report request: (found, revision)."""
+    revision_id = (parse_qs(query).get("revision") or [""])[0]
+    if not revision_id:
+        return True, None
+    revision = JOB_STORE.get_revision(job_id, revision_id)
+    return revision is not None, revision
 
 
 def _write_publication_snapshot(job_id: str, publication: dict[str, Any], revision: dict[str, Any] | None) -> dict[str, Any]:
@@ -1877,6 +1894,16 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
                     },
                     HTTPStatus.INTERNAL_SERVER_ERROR,
                 )
+            return
+        if parsed.path.startswith("/api/audits/") and parsed.path.endswith("/client-report"):
+            job_id = unquote(parsed.path.removeprefix("/api/audits/").removesuffix("/client-report").strip("/"))
+            if "/" in job_id or not self._require_owned_job(job_id, user): return
+            found, revision = _client_report_revision(job_id, parsed.query)
+            if not found:
+                self._send_json({"error": "Review revision not found."}, HTTPStatus.NOT_FOUND); return
+            body = _machine_report_context(job_id, revision)[1].encode("utf-8")
+            self.send_response(HTTPStatus.OK); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store"); self.send_header("Content-Security-Policy", CLIENT_REPORT_CSP); self.end_headers(); self.wfile.write(body)
             return
         if parsed.path.startswith("/api/audits/") and "/review-report/" in parsed.path:
             parts = [part for part in unquote(parsed.path).split("/") if part]
