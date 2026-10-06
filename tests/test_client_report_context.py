@@ -113,3 +113,46 @@ def test_same_defect_reported_twice_is_shown_once():
     data = {"findings": [{"findingId": "f5", "deduplicationId": "d1", "title": "Same", "severity": "medium"},
                          {"findingId": "f6", "deduplicationId": "d1", "title": "Same", "severity": "medium"}]}
     assert len(build(data, revision=None)["findings"]) == 1
+
+
+# --- Final review fixes -------------------------------------------------------
+
+def test_reviewer_can_suppress_and_edit_ai_findings_by_key():
+    revision = {"reviewStatus": "validated", "changes": {"ai-0": {"suppressed": True, "suppressionReason": "Lazy loading, not a defect"},
+                                                         "ai-1": {"priorityOverride": "high", "reviewNote": "Confirmed"}}}
+    context = build(revision=revision)
+    titles = [f["title"] for f in context["findings"]]
+    assert "Blank thumbnail column" not in titles
+    assert {"title": "Blank thumbnail column", "reason": "Lazy loading, not a defect"} in context["excluded"]
+    mixed = next(f for f in context["findings"] if f["key"] == "ai-1")
+    assert mixed["severity"] == "high" and mixed["reviewerNote"] == "Confirmed"
+
+
+def test_suppressed_finding_is_not_re_added_from_the_ai_list():
+    data = machine()
+    data["aiDiscoveredFindings"].append({"title": "Duplicate finding", "pageUrl": "https://managers.tn/", "aiDiscovered": True})
+    assert "Duplicate finding" not in [f["title"] for f in build(data)["findings"]]
+
+
+def test_suppressed_titles_never_reach_insights():
+    data = machine()
+    data["axes"][2]["painPoints"].append({"title": "Duplicate finding"})
+    data["recommendations"].append({"priority": "Low", "title": "Duplicate finding"})
+    insights = build(data)["insights"]
+    assert "Duplicate finding" not in insights["improvements"] + insights["recommendations"]
+
+
+def test_top_priorities_reflect_reviewer_edits():
+    first = build()["topPriorities"][0]
+    assert first["title"] == "Buttons must have discernible text"
+    assert first["severity"] == "critical" and first["recommendation"] == "Give every icon button an accessible name."
+
+
+def test_non_finite_and_malformed_values_do_not_crash():
+    data = machine()
+    data["executiveSummary"]["overallScore"] = "nan"
+    data["axes"][0]["score"] = float("inf")
+    context = build(data)
+    assert context["overall"]["score"] is None and context["axes"][0]["band"] == "none"
+    broken = build({"executiveSummary": "oops", "priorities": ["x", None], "findings": ["y"]}, revision=None)
+    assert broken["findings"] == [] and broken["overall"]["score"] is None

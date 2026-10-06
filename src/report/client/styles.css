@@ -21,6 +21,7 @@ body.embedded .report { padding-top: 8px; }
 .report { max-width: 1080px; margin: 0 auto; padding: 32px 24px 80px; }
 h1, h2, h3, h4 { margin: 0; line-height: 1.25; letter-spacing: -0.01em; }
 p { margin: 0; }
+h1, h2, h3, h4, p, li, strong, td, th, dd, figcaption, .tag, .pill { overflow-wrap: anywhere; min-width: 0; }
 a { color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
 a:hover { text-decoration: underline; }
 ul, ol { margin: 0; padding: 0; list-style: none; }
@@ -188,7 +189,8 @@ code { font: 12px/1.4 ui-monospace, "Cascadia Code", Consolas, monospace; overfl
   #insights { margin-top: 28px; }
   .finding-card, .kpi, .panel, .lane li, .callout, .priority, .card, .cta, tr { break-inside: avoid; }
   .section-head, .group-head, .sub-head { break-after: avoid; }
-  .has-image .finding-body { grid-template-columns: 1fr 1fr; }
+  .has-image .finding-body { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .page { max-width: 100%; }
   a { color: var(--ink); }
   .lane li { padding: 8px 0; }
   .lane li p { -webkit-line-clamp: 2; font-size: 9.5pt; }

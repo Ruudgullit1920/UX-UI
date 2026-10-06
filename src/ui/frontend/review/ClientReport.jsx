@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { getClientReportHtml } from "../api/clientReport.js";
 import { ErrorAlert } from "../components/Primitives.jsx";
 
-// Scripts never run in the report frame; same-origin only lets the page size the frame to its content.
+// Scripts never run in the report frame; same-origin only lets the page size the frame to its content,
+// and popups let report links open in a new tab instead of replacing the report.
 export default function ClientReport({ api, jobId, revisionId }) {
   const frame = useRef(null);
   const [html, setHtml] = useState("");
@@ -21,5 +22,5 @@ export default function ClientReport({ api, jobId, revisionId }) {
   }, [html]);
   if (error) return <ErrorAlert error={error} title="Couldn’t load the client report"/>;
   if (!html) return <p role="status" className="loading-message">Preparing the client report…</p>;
-  return <iframe ref={frame} className="client-report-frame" title="Client report" sandbox="allow-same-origin" srcDoc={html}/>;
+  return <iframe ref={frame} className="client-report-frame" title="Client report" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox" srcDoc={html}/>;
 }

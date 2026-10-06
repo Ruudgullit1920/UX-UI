@@ -80,3 +80,30 @@ def test_ai_review_copy_names_the_ai_agent_never_the_model(ui):
     page.reload()
     expect(page.get_by_text("The AI review didn’t finish")).to_be_visible(timeout=10000)
     assert "Claude" not in page.locator("body").text_content()
+
+
+def test_ai_findings_can_be_reviewed(ui):
+    page, _, _ = ui
+    def with_ai_finding(machine):
+        machine["aiDiscoveredFindings"] = [{"title": "Hero headline is cut off", "severity": "medium", "axisName": "Accessibility", "evidence": "Truncated title.", "aiDiscovered": True}]
+    complete(page, transform=with_ai_finding)
+    page.get_by_role("button", name="Hero headline is cut off").click()
+    expect(page.get_by_label("Review decision")).to_be_enabled()
+
+
+def test_report_frame_lets_links_open_in_a_new_tab(ui):
+    page, _, _ = ui
+    complete(page, wait_for_review=False)
+    open_report(page)
+    sandbox = page.get_by_title("Client report").get_attribute("sandbox")
+    assert "allow-popups" in sandbox and "allow-popups-to-escape-sandbox" in sandbox and "allow-scripts" not in sandbox
+
+
+def test_lowercase_model_name_never_reaches_the_ai_review_banner(ui):
+    page, _, _ = ui
+    complete(page)
+    job_id = page.evaluate("sessionStorage.getItem('uxui-current-audit')")
+    server.JOB_STORE.update(job_id, aiReviewStatus="failed", aiReviewError="AI review did not finish: cannot find the file specified: 'claude'")
+    page.reload()
+    expect(page.get_by_text("The AI review didn’t finish")).to_be_visible(timeout=10000)
+    assert "claude" not in page.locator("body").text_content().lower()

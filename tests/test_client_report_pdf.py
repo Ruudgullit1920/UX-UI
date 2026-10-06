@@ -44,3 +44,32 @@ def test_pdf_failure_is_reported_without_details(api_server, monkeypatch):
     monkeypatch.setattr(pdf, "render_pdf", broken)
     status, _, body = request(api_server, "GET", f"/api/audits/{job_id}/client-report.pdf", token="token-a")
     assert status == 503 and b"PDF export is temporarily unavailable." in body and b"secret" not in body
+
+
+def test_long_unbreakable_text_never_overflows_the_printed_page():
+    from playwright.sync_api import sync_playwright
+    data = machine()
+    long_url = "https://managers.tn/" + "very-long-path-segment-" * 12
+    for finding in data["deduplicatedFindings"]:
+        finding["title"] = "See " + long_url
+        finding["pageUrl"] = long_url
+    revision = {**REVISION, "changes": {**REVISION["changes"], "d1": {**REVISION["changes"]["d1"], "reviewNote": "Note " + "x" * 300}}}
+    html = render_client_report(build_client_report_context(audit_id="a", machine=data, revision=revision, audit_date="2026-10-06"))
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        page = browser.new_page(viewport={"width": 794, "height": 1123})
+        page.set_content(html)
+        page.emulate_media(media="print")
+        overflow = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+        browser.close()
+    assert overflow <= 0
+
+
+def test_unreachable_web_font_does_not_block_the_pdf(monkeypatch):
+    import time
+    # A non-routable address: requests to it hang instead of failing fast.
+    monkeypatch.setattr(pdf, "FONT_HOSTS", pdf.FONT_HOSTS + ("http://10.255.255.1/",))
+    html = '<!doctype html><html><head><link rel="stylesheet" href="http://10.255.255.1/font.css"></head><body><p>Report</p></body></html>'
+    started = time.monotonic()
+    assert pdf.render_pdf(html).startswith(b"%PDF")
+    assert time.monotonic() - started < 20

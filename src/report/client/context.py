@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import math
 from urllib.parse import urlparse
 from urllib.parse import urlparse
 from typing import Any
@@ -35,9 +36,10 @@ def _text(value: Any) -> str:
 
 def _number(value: Any) -> float | None:
     try:
-        return None if value is None or isinstance(value, bool) else float(value)
+        number = None if value is None or isinstance(value, bool) else float(value)
     except (TypeError, ValueError):
         return None
+    return number if number is not None and math.isfinite(number) else None
 
 
 def _severity(value: Any) -> str:
@@ -85,7 +87,7 @@ def _finding_record(item: dict[str, Any], key: str, ai: bool) -> dict[str, Any]:
     }
 
 
-def _findings(reviewed: dict[str, Any], machine: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
+def _findings(reviewed: dict[str, Any], machine: dict[str, Any], changes: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     findings, excluded, defects = [], [], set()
     for index, item in enumerate(reviewed["completeFindings"]):
         defect = _text(item.get("deduplicationId"))
@@ -97,13 +99,35 @@ def _findings(reviewed: dict[str, Any], machine: dict[str, Any]) -> tuple[list[d
             excluded.append({"title": _text(item.get("title")) or "Untitled finding", "reason": _text(review.get("suppressionReason"))})
         else:
             findings.append(_finding_record(item, _identity(item) or f"f-{index}", bool(item.get("aiDiscovered"))))
-    seen = {(f["title"], f["pageUrl"]) for f in findings} | {(e["title"], "") for e in excluded}
+    # AI findings live in their own list; the review workspace edits them by the same "ai-<n>" key.
+    seen = {(f["title"], f["pageUrl"]) for f in findings}
+    suppressed_titles = {e["title"] for e in excluded}
     for index, item in enumerate(_list(machine.get("aiDiscoveredFindings"))):
-        if not isinstance(item, dict) or (_text(item.get("title")), _text(item.get("pageUrl"))) in seen:
+        title = _text(item.get("title")) if isinstance(item, dict) else ""
+        if not isinstance(item, dict) or (title, _text(item.get("pageUrl"))) in seen or title in suppressed_titles:
             continue
-        findings.append(_finding_record(item, _identity(item) or f"ai-{index}", True))
+        key = _identity(item) or f"ai-{index}"
+        review = _dict(changes.get(key))
+        if review.get("suppressed"):
+            excluded.append({"title": title or "Untitled finding", "reason": _text(review.get("suppressionReason"))})
+            continue
+        findings.append(_finding_record({**item, "review": review}, key, True))
     findings.sort(key=lambda f: SEVERITIES.index(f["severity"]))
     return findings, excluded
+
+
+def _sanitised(machine: Any) -> dict[str, Any]:
+    """Drop malformed sections so one bad field never breaks the deliverable."""
+    machine = dict(_dict(machine))
+    for key in ("executiveSummary", "summary", "site", "coverage"):
+        if key in machine:
+            machine[key] = _dict(machine[key])
+    for key in ("priorities", "allFindings", "findings", "deduplicatedFindings", "aiDiscoveredFindings", "axes", "recommendations", "scannedPages"):
+        if key in machine:
+            machine[key] = [item for item in _list(machine[key]) if isinstance(item, dict)]
+    if isinstance(machine.get("executiveSummary"), dict) and "topPriorities" in machine["executiveSummary"]:
+        machine["executiveSummary"] = {**machine["executiveSummary"], "topPriorities": [item for item in _list(machine["executiveSummary"]["topPriorities"]) if isinstance(item, dict)]}
+    return machine
 
 
 def _capped(items: list[str], limit: int = 4) -> list[str]:
@@ -122,11 +146,13 @@ def _review(revision: dict[str, Any] | None, reviewed: dict[str, Any]) -> dict[s
 
 
 def build_client_report_context(*, audit_id: str, machine: dict[str, Any], revision: dict[str, Any] | None, audit_date: str | None = None) -> dict[str, Any]:
-    machine = _dict(machine)
+    machine = _sanitised(machine)
     reviewed = reviewed_report_context(audit_id=audit_id, machine=machine, revision=revision)
+    changes = _dict((revision or {}).get("changes"))
     site = _dict(machine.get("site"))
     executive = _dict(machine.get("executiveSummary"))
-    findings, excluded = _findings(reviewed, machine)
+    findings, excluded = _findings(reviewed, machine, changes)
+    hidden = {e["title"] for e in excluded}
     counts = {severity: sum(1 for f in findings if f["severity"] == severity) for severity in SEVERITIES}
     axes = [{"id": _text(axis.get("id")), "name": _name(axis), "score": _number(axis.get("score")), "scored": axis.get("scored") is not False and _number(axis.get("score")) is not None,
              "summary": _text(axis.get("summary")), "_source": axis} for axis in _list(machine.get("axes")) if isinstance(axis, dict)]
@@ -151,15 +177,15 @@ def build_client_report_context(*, audit_id: str, machine: dict[str, Any], revis
         "kpis": {"pagesAudited": len(pages), "findings": len(findings), "critical": counts["critical"],
                  "blockers": bool(executive.get("hasCriticalBlocker")) or counts["critical"] > 0},
         "positioningHook": _text(executive.get("positioningHook")),
-        "topPriorities": [{"title": _title(p), "axis": _text(p.get("axisName") or p.get("sourceSheet")), "severity": _severity(p.get("severity")),
-                           "recommendation": _text(p.get("recommendation"))} for p in reviewed["priorities"][:3] if isinstance(p, dict)],
+        # Taken from the reviewed findings so overrides, edits and exclusions always apply.
+        "topPriorities": [{"title": f["title"], "axis": f["axis"], "severity": f["severity"], "recommendation": f["recommendation"]} for f in findings[:3]],
         "axes": [{k: v for k, v in axis.items() if k != "_source"} for axis in axes],
         "severityCounts": counts,
         "strongestAxis": _name(executive.get("strongestAxis")), "weakestAxis": _name(executive.get("weakestAxis")),
         "insights": {"strengths": _capped([_title(s) for a in by_strength for s in _list(a["_source"].get("strengths"))]),
-                     "improvements": _capped([_title(s) for a in by_weakness for s in _list(a["_source"].get("painPoints"))]),
+                     "improvements": _capped([_title(s) for a in by_weakness for s in _list(a["_source"].get("painPoints")) if _title(s) not in hidden]),
                      "opportunities": _capped([_title(s) for a in by_weakness for s in _list(a["_source"].get("opportunities"))]),
-                     "recommendations": _capped([_title(r) for r in recommendations])},
+                     "recommendations": _capped([_title(r) for r in recommendations if _title(r) not in hidden])},
         "findings": findings, "excluded": excluded, "roadmap": roadmap,
         "appendix": {"methodology": methodology, "coverage": pages, "limitations": LIMITATIONS},
     }

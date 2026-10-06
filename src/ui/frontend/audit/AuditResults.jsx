@@ -13,6 +13,6 @@ export default function AuditResults({ job, machine }) {
 export function AIReviewStatus({ job }) {
   if (job.aiReviewStatus === "running") return <InlineAlert tone="info" title="AI review in progress">The AI agent is reviewing the screenshots. Its findings will be added to the report in about a minute.</InlineAlert>;
   if (job.aiReviewStatus === "completed") return <InlineAlert tone="success" title="AI review added to the report">Open the report to see the visual findings alongside the machine checks.</InlineAlert>;
-  if (job.aiReviewStatus === "failed") return <InlineAlert tone="warning" title="The AI review didn’t finish" details={job.aiReviewError?.replace(/Claude(?: Code)?(?: CLI)?/g, "AI agent")}>The machine report is complete and ready to review.</InlineAlert>;
+  if (job.aiReviewStatus === "failed") return <InlineAlert tone="warning" title="The AI review didn’t finish" details={job.aiReviewError?.replace(/claude(?: code)?(?: cli)?/gi, "AI agent")}>The machine report is complete and ready to review.</InlineAlert>;
   return null;
 }

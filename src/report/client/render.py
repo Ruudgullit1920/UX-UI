@@ -175,5 +175,5 @@ def render_client_report(context: dict[str, Any], images: dict[str, str] | None 
     body = (_cover(context) + _executive(context) + _scorecard(context) + _insights(context)
             + _findings(context, images) + _roadmap(context) + ("" if embedded else _next_steps(context)) + _appendix(context))
     return (f'<!doctype html><html lang="{lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
-            f'<title>{esc(title)}</title>{"" if embedded else FONT_LINKS}'
+            f'<title>{esc(title)}</title>{'<base target="_blank">' if embedded else FONT_LINKS}'
             f'<style>{STYLES}</style></head><body{' class="embedded"' if embedded else ""}><main class="report">{body}</main></body></html>')
