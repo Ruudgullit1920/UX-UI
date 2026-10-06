@@ -41,6 +41,9 @@ def test_quick_profile():
         "UX_AUDIT_INTERACTION_MAX_PAGES": "1",
         "AUDIT_NAVIGATION_TIMEOUT_MS": "10000",
         "AUDIT_NETWORK_IDLE_TIMEOUT_MS": "2000",
+        "UX_SITEMAP_MAX_FILES": "1",
+        "UX_SITEMAP_MAX_URLS": "50",
+        "AUDIT_MAX_SAFE_INTERACTIONS_PER_PAGE": "5",
     }
     assert (profile.budget_sec, profile.hard_stop_sec) == (60, 180)
 

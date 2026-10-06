@@ -91,6 +91,10 @@ DEPTH_PROFILES = {
             "UX_AUDIT_INTERACTION_MAX_PAGES": "1",
             "AUDIT_NAVIGATION_TIMEOUT_MS": "10000",
             "AUDIT_NETWORK_IDLE_TIMEOUT_MS": "2000",
+            # Two pages need the menu, not the whole sitemap (each URL is SSRF-validated).
+            "UX_SITEMAP_MAX_FILES": "1",
+            "UX_SITEMAP_MAX_URLS": "50",
+            "AUDIT_MAX_SAFE_INTERACTIONS_PER_PAGE": "5",
         },
         budget_sec=60,
         hard_stop_sec=180,

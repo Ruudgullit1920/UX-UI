@@ -861,7 +861,7 @@ async def async_main(
         if skip:
             page_result["lighthouse"] = {"measurement": "not_measured", "status": "skipped", "skipReason": skip,
                                          "pageId": page_id, "tool": "lighthouse", "dataKind": "lab"}
-            SKIPPED_STEPS.append({"step": "lighthouse", "pageId": page_id, "reason": skip})
+            SKIPPED_STEPS.append({"step": "lighthouse", "page": page_id or audit_url, "reason": skip})
             continue
         measured += 1
         page_result["lighthouse"] = run_lighthouse(
@@ -887,7 +887,7 @@ async def async_main(
         "candidatePagesTruncated": truncated_page_count,
         "pageLimit": max_pages,
         "skippedSteps": SKIPPED_STEPS + [
-            {"step": "interaction_tests", "pageId": str(result.get("pageId") or ""), "reason": result["interactionSummary"]["skippedReason"]}
+            {"step": "interaction_tests", "page": str(result.get("pageId") or result.get("originalUrl") or result.get("url") or ""), "reason": result["interactionSummary"]["skippedReason"]}
             for result in page_results
             if isinstance(result, dict) and (result.get("interactionSummary") or {}).get("skippedReason")
         ],
