@@ -389,6 +389,29 @@ def _snapshot_for_request(job: dict[str, Any], handler: BaseHTTPRequestHandler) 
     return payload
 
 
+_BROWSER_OK = False
+
+
+def _chromium_executable() -> str:
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as playwright:
+        return playwright.chromium.executable_path
+
+
+def _browser_check() -> str:
+    """Readiness of the audit browser: ok, missing (Playwright without Chromium), or unavailable."""
+    global _BROWSER_OK
+    if _BROWSER_OK:
+        return "ok"  # starting Playwright costs about a second; a found browser stays found
+    try:
+        found = Path(_chromium_executable()).exists()
+    except Exception:
+        return "unavailable"
+    _BROWSER_OK = found
+    return "ok" if found else "missing"
+
+
 def _machine_audit_data(job_id: str) -> dict[str, Any]:
     workspace = AuditWorkspace(job_id, AUDITS_DIR)
     source_root = AUDITS_DIR
@@ -1653,11 +1676,7 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
             checks["storage"] = "error"
         if ready and (JOB_WORKER is None or not JOB_WORKER.healthy()):
             checks["worker"] = "error"
-        try:
-            from playwright.sync_api import executable_path
-            checks["browser"] = "ok" if Path(executable_path).exists() else "missing"
-        except Exception:
-            checks["browser"] = "unavailable"
+        checks["browser"] = _browser_check()
         status = HTTPStatus.OK if all(value == "ok" or (not ready and key in {"worker", "browser"}) for key, value in checks.items()) else HTTPStatus.SERVICE_UNAVAILABLE
         return {"status": "ok" if status == HTTPStatus.OK else "degraded", "service": "ux-ui-auditor", "checks": checks}, status
 
