@@ -3210,7 +3210,7 @@ async def async_main() -> None:
         print(f"\\nSaved to {output_file}")
 
     except PlaywrightTimeoutError:
-        error = {"error": "Failed to crawl: timeout"}
+        error = {"error": crawl_timeout_message(options.timeout)}
         atomic_write_json(output_file, error)
         print_json(error)
         raise SystemExit(1)
@@ -3226,6 +3226,11 @@ async def async_main() -> None:
         atomic_write_json(output_file, error)
         print_json(error)
         raise SystemExit(1)
+
+
+def crawl_timeout_message(timeout_seconds: int) -> str:
+    return (f"Failed to crawl: the website did not finish loading within {timeout_seconds} s. "
+            "It may be slow right now or limiting automated visits; try again in a few minutes.")
 
 
 def main() -> None:
