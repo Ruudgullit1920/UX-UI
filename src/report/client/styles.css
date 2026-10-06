@@ -16,6 +16,8 @@ body {
     var(--canvas);
   background-attachment: fixed;
 }
+body.embedded { background: transparent; }
+body.embedded .report { padding-top: 8px; }
 .report { max-width: 1080px; margin: 0 auto; padding: 32px 24px 80px; }
 h1, h2, h3, h4 { margin: 0; line-height: 1.25; letter-spacing: -0.01em; }
 p { margin: 0; }

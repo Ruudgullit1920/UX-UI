@@ -97,3 +97,9 @@ def test_expert_cta_is_a_static_link_when_booking_is_configured(monkeypatch):
 def test_expert_cta_omitted_without_booking(monkeypatch):
     monkeypatch.setattr(render, "teaser_payload", lambda *a, **k: None)
     assert 'id="next-steps"' not in report()
+
+
+def test_embedded_report_blends_into_the_app():
+    context = build_client_report_context(audit_id="a", machine=machine(), revision=None, audit_date="2026-10-06")
+    assert '<body class="embedded">' in render_client_report(context, embedded=True)
+    assert '<body class="embedded">' not in render_client_report(context)
