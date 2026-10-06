@@ -1,7 +1,11 @@
 /* Landing: one hero, one CTA. A real page is scanned live; findings land on the real elements. */
 /* One content width and one centred axis for header, hero, demo and cards. */
 .lp { --lp-width: 1120px; display: grid; grid-template-rows: auto 1fr auto; min-height: 100svh; width: min(calc(100% - 48px), var(--lp-width)); margin-inline: auto; }
-.lp-header { display: flex; align-items: center; min-height: 80px; }
+.lp-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 80px; }
+.lp-lang { display: flex; padding: 3px; border: 1px solid var(--slate-200); border-radius: var(--radius-pill); background: #fff; }
+.lp-lang a { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 32px; padding: 0 10px; border-radius: var(--radius-pill); color: var(--slate-600); font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-decoration: none; }
+.lp-lang a:hover { color: var(--slate-900); }
+.lp-lang a[aria-current] { background: var(--ey-navy); color: #fff; }
 .lp-brand .brand-logo { display: block; width: auto; height: 40px; }
 .lp-brand { flex: 0 0 auto; text-decoration: none; color: inherit; border-radius: var(--radius-sm); }
 main.lp-main { width: auto; max-width: none; min-height: 0; margin: 0; padding: 16px 0 0; }
@@ -59,6 +63,7 @@ main.lp-main { width: auto; max-width: none; min-height: 0; margin: 0; padding: 
 /* Dimension tracker: each chip lights up as the scan reaches that dimension's finding. */
 .lp-dims { display: flex; flex-wrap: wrap; gap: 4px; margin: 10px 0 0; padding: 0; list-style: none; }
 .lp-dims li { padding: 2px 7px; border: 1px solid var(--color-success-line); border-radius: var(--radius-pill); background: var(--color-success-bg); color: var(--color-success); font-size: 10px; font-weight: 600; animation: lp-dim 300ms var(--ease-out) both; }
+.lp-dims li.is-clear { border-color: var(--slate-200); background: #fff; color: var(--slate-600); animation: none; }
 @keyframes lp-dim { from { border-color: var(--slate-200); background: #fff; color: var(--slate-600); } to { border-color: var(--color-success-line); background: var(--color-success-bg); color: var(--color-success); } }
 .lp-log-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 10px; border-top: 1px solid var(--slate-200); color: var(--slate-600); font-size: .75rem; }
 .lp-log-foot b { color: var(--slate-900); font-variant-numeric: tabular-nums; }
@@ -84,6 +89,16 @@ main.lp-main { width: auto; max-width: none; min-height: 0; margin: 0; padding: 
 .lp-flow > span { padding: 3px 8px; border-radius: var(--radius-pill); background: var(--slate-100); font-weight: 600; }
 .lp-flow > span.is-on { background: var(--color-success-bg); color: var(--color-success); }
 
+.lp-axes { margin: 72px 0 0; }
+.lp-axes h2 { font-size: clamp(1.5rem, 2.6vw, 2rem); letter-spacing: -.03em; text-align: center; }
+.lp-axes-lead { max-width: 680px; margin: 12px auto 0; color: var(--slate-600); line-height: 1.6; text-align: center; text-wrap: pretty; }
+.lp-axes ol { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; margin: 32px 0 0; padding: 0; list-style: none; counter-reset: lp-axis; }
+.lp-axes li { display: grid; grid-template-rows: auto 1fr auto; gap: 8px; padding: 20px; border: 1px solid var(--slate-200); border-radius: 18px; background: #fff; counter-increment: lp-axis; }
+.lp-axes h3 { font-size: 1rem; letter-spacing: -.01em; }
+.lp-axes h3::before { content: counter(lp-axis); display: inline-grid; place-items: center; width: 24px; height: 24px; margin-right: 8px; border-radius: 50%; background: var(--ey-navy); color: #fff; font-size: .75rem; font-variant-numeric: tabular-nums; vertical-align: 1px; }
+.lp-axes li p { font-size: .875rem; line-height: 1.55; }
+.lp-axes .lp-axis-meta { padding-top: 10px; border-top: 1px dashed var(--slate-200); color: var(--slate-600); font-size: .75rem; }
+
 .lp-footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 24px; padding: 28px 0; color: var(--slate-600); font-size: .75rem; }
 
 @keyframes lp-scan { 0% { opacity: 1; top: 0; } 92% { opacity: 1; } 100% { opacity: 0; top: 100%; } }
@@ -104,6 +119,7 @@ main.lp-main { width: auto; max-width: none; min-height: 0; margin: 0; padding: 
 @media (max-width: 720px) {
   .lp { width: calc(100% - 32px); }
   .lp-benefits { grid-template-columns: 1fr; margin-top: 40px; }
+  .lp-axes { margin-top: 48px; }
   .lp-cta { width: 100%; justify-content: center; }
   .lp-box b { display: none; }
   .lp-footer { flex-direction: column; }

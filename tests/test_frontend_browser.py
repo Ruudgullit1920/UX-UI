@@ -606,9 +606,12 @@ def test_landing_page_runs_demo_and_has_one_start_action(ui):
     assert page.get_by_role("img", name="Home page of Citylights", exact=False).evaluate("image => image.naturalWidth") > 0
     expect(page.get_by_role("status")).to_contain_text("UX/UI audit complete")
     expect(page.locator(".lp-log ol li")).to_have_count(5)
-    expect(page.locator(".lp-dims li")).to_have_count(5)
+    expect(page.locator(".lp-dims li")).to_have_count(7)
+    expect(page.locator(".lp-axes li")).to_have_count(7)
     expect(page.get_by_text("Measured · axe-core", exact=True)).to_have_count(1)
     expect(page.get_by_role("main").get_by_role("link")).to_have_count(1)
+    assert page.evaluate("document.querySelector('meta[name=description]').content").startswith("Audit websites")
+    expect(page.locator("link[rel=alternate][hreflang=fr]")).to_have_attribute("href", base + "/?lang=fr")
     for width in [375, 768, 1024, 1440]:
         page.set_viewport_size({"width": width, "height": 900})
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
@@ -621,6 +624,25 @@ def test_landing_page_runs_demo_and_has_one_start_action(ui):
     screenshot(page, "setup-3d-icons")
     page.get_by_role("link", name="EY Studio Plus home").click()
     expect(page).to_have_url(base + "/")
+
+
+def test_landing_page_switches_between_english_and_french(ui):
+    page, instance, _ = ui
+    base = f"http://127.0.0.1:{instance.server_port}"
+    page.goto(base + "/")
+    page.get_by_role("navigation", name="Language").get_by_role("link", name="Français").click()
+    expect(page).to_have_url(base + "/?lang=fr")
+    expect(page.get_by_role("heading", level=1)).to_have_text("Des audits UX/UI fondés sur des preuves.")
+    expect(page.locator("html")).to_have_attribute("lang", "fr")
+    expect(page).to_have_title("Outil d’audit UX/UI fondé sur des preuves | EY Studio+")
+    expect(page.get_by_role("link", name="Lancer un audit")).to_be_visible()
+    expect(page.locator("link[rel=canonical]")).to_have_attribute("href", base + "/?lang=fr")
+    axe(page)
+    page.goto(base + "/")
+    expect(page.get_by_role("heading", level=1)).to_have_text("Des audits UX/UI fondés sur des preuves.")
+    page.get_by_role("link", name="English").click()
+    expect(page).to_have_url(base + "/")
+    expect(page.locator("html")).to_have_attribute("lang", "en")
 
 
 def _open_report_with_teaser(page):
