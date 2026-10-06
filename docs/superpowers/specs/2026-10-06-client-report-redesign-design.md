@@ -34,7 +34,7 @@ New package `src/report/client/`, small focused units:
 | Unit | Responsibility | Depends on |
 |---|---|---|
 | `context.py` | `build_client_report_context(machine, revision, audit_id)` → plain dict: site, date, executive KPIs, axes, severity counts, strengths/improvements/opportunities, priorities, roadmap buckets, findings (with reviewer edits applied, suppressed removed), appendix data. Pure, no I/O. | `reviewed_report_context` logic (moved/reused) |
-| `crops.py` | `crop_evidence(finding, artifacts_root) -> data URI or None`: crops the screenshot to `visualRegion` with padding, draws the highlight box, downsizes, encodes JPEG/WebP as a data URI. Reuses `_visual_region_from_item`, `_region_to_pixels`, `_draw_red_highlight`, `_desktop_crop_box` (extracted from `generate_gtm_report.py` into this module and re-imported there). No region → `None` (no image, never full page). | Pillow |
+| `crops.py` | `crop_evidence(finding, artifacts_root) -> data URI or None`: crops the screenshot to `visualRegion` with padding, draws the highlight box, downsizes, encodes JPEG/WebP as a data URI. Reuses `_visual_region_from_item`, `_region_to_pixels`, `_draw_red_highlight`, `_desktop_crop_box` (imported from `generate_gtm_report.py` as-is; no move, the legacy CLI keeps working untouched). No region → `None` (no image, never full page). | Pillow |
 | `charts.py` | Pure functions returning inline SVG strings: `score_gauge`, `axis_bars`, `severity_donut`, `kpi_tile`. Vector, print-safe, no JS. | — |
 | `render.py` | `render_client_report(context) -> str`: one self-contained HTML document (inline CSS + inline SVG + data-URI images, no external requests except optional Google Font with system fallback). All text HTML-escaped. | charts, crops output in context |
 | `styles.css` (inlined at render) | Tokens, light gradient background, screen layout, `@media print` + `@page` rules. | — |
@@ -45,8 +45,8 @@ New package `src/report/client/`, small focused units:
 ## Report structure (screen = PDF, A4 portrait)
 
 1. **Cover** — EY Studio+ logo (`ey_studio_logo_svg`), "UX/UI Audit Report", client site name + URL, audit date, review status line ("Machine audit — not reviewed" / "Reviewed by EY Studio+"), large overall score gauge with rating.
-2. **Executive summary** — KPI tile row (overall score /10 + rating, pages audited, total findings, critical blockers); positioning hook as a lead paragraph (max ~3 lines); Top 3 priorities as numbered cards.
-3. **Scorecard** — horizontal bar per axis (0–10, colour by band: red < 5, amber 5–7, green ≥ 7, grey "Not scored"); severity donut (Critical/High/Medium/Low) with legend counts; strongest / weakest axis callouts.
+2. **Executive summary** — KPI tile row (overall score /100 + rating, pages audited, total findings, critical blockers); positioning hook as a lead paragraph (max ~3 lines); Top 3 priorities as numbered cards.
+3. **Scorecard** — horizontal bar per axis (0–100, colour by band: red < 50, amber 50–69, green ≥ 70, grey "Not scored"); severity donut (Critical/High/Medium/Low) with legend counts; strongest / weakest axis callouts.
 4. **Insight panels** — 2×2 grid: Strength areas · Critical improvement areas · Other opportunities · Recommendations (bulleted, max 4 each, from axes `strengths` / `painPoints` / `opportunities` and `recommendations`).
 5. **Findings** — grouped by severity (Critical → Low), one card each: severity pill + axis tag + page; title; cropped highlighted screenshot (left) and **The problem** / **Why it matters** / **Recommendation** (right); reviewer note if present. Cards use `break-inside: avoid`.
 6. **Roadmap** — recommendations bucketed Now (critical/high) / Next (medium) / Later (low) as three columns.
