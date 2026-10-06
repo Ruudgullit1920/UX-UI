@@ -693,3 +693,15 @@ def test_roadmap_teaser_hides_zero_count_chips(ui):
     teaser = page.locator("#roadmap-teaser")
     teaser.scroll_into_view_if_needed()
     expect(teaser.locator(".rt-chip")).to_have_text(["1 structural change", "1 area to improve"])
+
+
+def test_website_audit_depth_defaults_to_quick(ui):
+    page, _, _ = ui
+    expect(page.get_by_role("radio", name="Quick")).to_be_checked()
+    assert start(page)["depth"] == "quick"
+
+
+def test_website_audit_depth_can_be_deep(ui):
+    page, _, _ = ui
+    page.get_by_role("radio", name="Deep").check()
+    assert start(page)["depth"] == "deep"

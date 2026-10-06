@@ -70,6 +70,46 @@ load_dotenv(ROOT_DIR / ".env")
 JOB_PROCESSES: dict[str, subprocess.Popen[str]] = {}
 JOB_PROCESSES_LOCK = threading.Lock()
 CANCELLED_RETURN_CODE = -999
+TIMEOUT_RETURN_CODE = -1
+AUDIT_DEPTHS = ("quick", "deep")
+
+
+@dataclass(frozen=True)
+class DepthProfile:
+    """Per-depth pipeline settings: env overrides, soft time budget, hard stop."""
+    env: dict[str, str]
+    budget_sec: int
+    hard_stop_sec: int
+
+
+DEPTH_PROFILES = {
+    # Homepage + first main-menu page; Lighthouse and click-tests on the homepage only.
+    "quick": DepthProfile(
+        env={
+            "UX_AUDIT_MAX_PAGES": "2",
+            "UX_LIGHTHOUSE_MAX_PAGES": "1",
+            "UX_AUDIT_INTERACTION_MAX_PAGES": "1",
+            "AUDIT_NAVIGATION_TIMEOUT_MS": "10000",
+            "AUDIT_NETWORK_IDLE_TIMEOUT_MS": "2000",
+        },
+        budget_sec=60,
+        hard_stop_sec=180,
+    ),
+    "deep": DepthProfile(
+        env={"UX_AUDIT_MAX_PAGES": "10", "UX_LIGHTHOUSE_MAX_PAGES": "3"},
+        budget_sec=360,
+        hard_stop_sec=600,
+    ),
+}
+
+
+def _depth_profile(depth: str | None) -> DepthProfile:
+    """Jobs created before depths existed carry none and run as quick."""
+    return DEPTH_PROFILES.get(str(depth or "quick"), DEPTH_PROFILES["quick"])
+
+
+def _elapsed_label(seconds: float) -> str:
+    return f"{round(seconds)} s" if seconds < 90 else f"{round(seconds / 60)} min"
 RATE_LIMITER = SlidingWindowRateLimiter()
 LOG = logging.getLogger("ux_ui.audit")
 JOB_STORE = JobStore.from_environment(ROOT_DIR)
@@ -189,7 +229,7 @@ def _now() -> float:
     return time.time()
 
 
-def _new_job(url: str, mode: str) -> dict[str, Any]:
+def _new_job(url: str, mode: str, depth: str = "quick") -> dict[str, Any]:
     job = {
         "id": uuid.uuid4().hex[:12],
         "type": "website",
@@ -197,6 +237,7 @@ def _new_job(url: str, mode: str) -> dict[str, Any]:
         "inputType": "url",
         "url": url,
         "mode": mode,
+        "depth": depth,
         "status": "queued",
         "stage": "Queued",
         "progress": 0,
@@ -1119,7 +1160,7 @@ def _is_transient_stage_failure(job_id: str) -> bool:
     return any(signal in recent for signal in transient_signals) and not any(signal in recent for signal in deterministic_signals)
 
 
-def _run_command(job_id: str, command: list[str], *, stage: str, progress: int, env_overrides: dict[str, str] | None = None, _attempt: int = 0) -> int:
+def _run_command(job_id: str, command: list[str], *, stage: str, progress: int, env_overrides: dict[str, str] | None = None, stage_timeout: float | None = None, _attempt: int = 0) -> int:
     if _finish_if_cancelled(job_id):
         return CANCELLED_RETURN_CODE
 
@@ -1166,11 +1207,14 @@ def _run_command(job_id: str, command: list[str], *, stage: str, progress: int, 
             if _finish_if_cancelled(job_id):
                 _terminate_process(process)
                 return CANCELLED_RETURN_CODE
-            if time.monotonic() - stage_started > _stage_timeout(stage) or total_elapsed + (time.monotonic() - stage_started) > total_timeout:
+            limit = stage_timeout if stage_timeout is not None else _stage_timeout(stage)
+            if time.monotonic() - stage_started > limit or total_elapsed + (time.monotonic() - stage_started) > total_timeout:
                 _terminate_process(process)
-                _set_job(job_id, status="failed", stage=f"Timed out during {stage}", error=f"Audit timeout during stage: {stage}.")
-                JOB_STORE.event(job_id, "error", "timeout", f"Audit timeout during stage: {stage}.")
-                return -1
+                current = str((JOB_STORE.get(job_id) or {}).get("stage") or stage)
+                message = f"Stopped after {_elapsed_label(total_elapsed + time.monotonic() - stage_started)} while {current[:1].lower()}{current[1:]}."
+                _set_job(job_id, status="failed", stage=f"Timed out during {stage}", error=message)
+                JOB_STORE.event(job_id, "error", "timeout", message)
+                return TIMEOUT_RETURN_CODE
             try:
                 line = lines.get(timeout=0.2)
             except queue.Empty:
@@ -1189,7 +1233,7 @@ def _run_command(job_id: str, command: list[str], *, stage: str, progress: int, 
             delay = min(2.0, 0.2 * (2**_attempt))
             _append_log(job_id, f"Transient {stage} failure; retrying once after {delay:.1f}s.")
             time.sleep(delay)
-            return _run_command(job_id, command, stage=stage, progress=progress, env_overrides=env_overrides, _attempt=_attempt + 1)
+            return _run_command(job_id, command, stage=stage, progress=progress, env_overrides=env_overrides, stage_timeout=stage_timeout, _attempt=_attempt + 1)
         return return_code
     finally:
         with JOB_PROCESSES_LOCK:
@@ -1216,15 +1260,25 @@ def _run_audit_job(job_id: str) -> None:
     ]
     if mode == "gtm" and _env_flag("GTM_SKIP_VISION", default=False):
         pipeline_command.append("--skip-vision")
+    profile = _depth_profile(job.get("depth"))
+    started_at = float(job.get("startedAt") or _now())
     pipeline_code = _run_command(
         job_id,
         pipeline_command,
         stage="Running audit pipeline",
         progress=5,
-        env_overrides={"GTM_AUTO_DEPLOY": "0", "GTM_DISABLE_VERCEL_DEPLOY": "1"},
+        env_overrides={
+            "GTM_AUTO_DEPLOY": "0",
+            "GTM_DISABLE_VERCEL_DEPLOY": "1",
+            **profile.env,
+            "UX_AUDIT_DEADLINE": f"{started_at + profile.budget_sec:.3f}",
+        },
+        stage_timeout=profile.hard_stop_sec,
     )
     if pipeline_code == CANCELLED_RETURN_CODE or _finish_if_cancelled(job_id):
         return
+    if pipeline_code == TIMEOUT_RETURN_CODE:
+        return  # _run_command already recorded which stage the hard stop interrupted
     if pipeline_code != 0:
         _set_job(
             job_id,
@@ -1999,8 +2053,11 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
                         raise ValueError("Audit mode must be either detailed or gtm.")
                     if mode == "detailed" and not _detailed_workbook_template_available():
                         raise ValueError("Detailed audits are unavailable because no configured workbook template exists.")
+                    depth = str(data.get("depth") or "quick").strip().lower()
+                    if depth not in AUDIT_DEPTHS:
+                        raise ValueError("Audit depth must be either quick or deep.")
                     url = _validate_url(str(data.get("url") or ""))
-                    job = _new_job(url, mode)
+                    job = _new_job(url, mode, depth)
             elif audit_type == "figma":
                     figma_url = _validate_figma_url(str(data.get("figmaUrl") or data.get("url") or ""))
                     job = _new_figma_job(figma_url)
