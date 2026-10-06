@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import datetime as _dt
+from urllib.parse import urlparse
+from urllib.parse import urlparse
 from typing import Any
 
 from src.report.reviewed_report import reviewed_report_context
+from src.report.roadmap_teaser import NON_FAILING
 
 SEVERITIES = ("critical", "high", "medium", "low")
 LIMITATIONS = [
@@ -13,6 +16,7 @@ LIMITATIONS = [
     "AI interpretation of screenshots is probabilistic; contrast and focus order may need human confirmation.",
 ]
 REVIEWED = {"validated", "approved"}
+ROADMAP_LANE_LIMIT = 6
 
 
 def _dict(value: Any) -> dict[str, Any]:
@@ -82,8 +86,12 @@ def _finding_record(item: dict[str, Any], key: str, ai: bool) -> dict[str, Any]:
 
 
 def _findings(reviewed: dict[str, Any], machine: dict[str, Any]) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
-    findings, excluded = [], []
+    findings, excluded, defects = [], [], set()
     for index, item in enumerate(reviewed["completeFindings"]):
+        defect = _text(item.get("deduplicationId"))
+        if _text(item.get("outcome") or item.get("status")).lower() in NON_FAILING or (defect and defect in defects):
+            continue
+        defects.add(defect)
         review = _dict(item.get("review"))
         if review.get("suppressed"):
             excluded.append({"title": _text(item.get("title")) or "Untitled finding", "reason": _text(review.get("suppressionReason"))})
@@ -108,7 +116,7 @@ def _capped(items: list[str], limit: int = 4) -> list[str]:
 
 def _review(revision: dict[str, Any] | None, reviewed: dict[str, Any]) -> dict[str, Any]:
     status = _text((revision or {}).get("reviewStatus")) or "unreviewed"
-    label = ("Automated audit — not yet reviewed" if status == "unreviewed"
+    label = ("Automated audit — not reviewed" if status == "unreviewed"
              else "Reviewed and validated by EY Studio+" if status in REVIEWED else "Expert review in progress")
     return {"status": status, "label": label, "revisionId": reviewed.get("revisionId"), "reviewer": reviewed.get("reviewer") or {}}
 
@@ -128,15 +136,15 @@ def build_client_report_context(*, audit_id: str, machine: dict[str, Any], revis
     by_weakness = sorted(axes, key=lambda a: a["score"] if a["scored"] else 101)
     recommendations = [r for r in _list(machine.get("recommendations")) if isinstance(r, dict)]
     roadmap: dict[str, list[dict[str, str]]] = {"now": [], "next": [], "later": []}
-    for item in recommendations:
-        priority = _text(item.get("priority")).lower()
-        bucket = "now" if priority in {"critical", "high"} else "next" if priority == "medium" else "later"
-        roadmap[bucket].append({"title": _title(item), "description": _text(item.get("description")), "impact": _text(item.get("impact")), "axis": _text(item.get("axis"))})
+    for finding in findings:  # already ordered by severity
+        bucket = "now" if finding["severity"] in {"critical", "high"} else "next" if finding["severity"] == "medium" else "later"
+        if len(roadmap[bucket]) < ROADMAP_LANE_LIMIT:
+            roadmap[bucket].append({"title": finding["title"], "description": finding["recommendation"], "axis": finding["axis"]})
     pages = [{"name": _text(p.get("page_name") or p.get("title")), "url": _text(p.get("page_url"))} for p in _list(machine.get("scannedPages")) if isinstance(p, dict)]
     methodology = [": ".join(x for x in (_text(m.get("step")), _text(m.get("description"))) if x) if isinstance(m, dict) else _text(m)
                    for m in _list(machine.get("methodology"))] or reviewed["methodology"]
     context = {
-        "auditId": audit_id, "site": {"name": _text(site.get("domain")) or _text(site.get("display_name")) or "Audited site", "url": _text(site.get("homepage") or site.get("url"))},
+        "auditId": audit_id, "site": {"name": _text(site.get("domain")) or urlparse(_text(site.get("homepage") or site.get("url"))).netloc or "Audited site", "url": _text(site.get("homepage") or site.get("url"))},
         "language": _text(site.get("language") or machine.get("language")) or "en",
         "auditDate": audit_date or _dt.date.today().isoformat(), "review": _review(revision, reviewed),
         "overall": {"score": _number(executive.get("overallScore")), "rating": _text(executive.get("overallRating")), "reason": _text(executive.get("overallReason"))},
@@ -156,3 +164,19 @@ def build_client_report_context(*, audit_id: str, machine: dict[str, Any], revis
         "appendix": {"methodology": methodology, "coverage": pages, "limitations": LIMITATIONS},
     }
     return context
+
+
+def client_context_from_reviewed(reviewed: dict[str, Any]) -> dict[str, Any]:
+    """Adapt a legacy reviewed-report context (review edits already merged) into a client context."""
+    changes, findings = {}, []
+    for item in _list(reviewed.get("completeFindings")):
+        if not isinstance(item, dict):
+            continue
+        findings.append({k: v for k, v in item.items() if k != "review"})
+        if _identity(item):
+            changes[_identity(item)] = _dict(item.get("review"))
+    machine = {"deduplicatedFindings": findings, "priorities": _list(reviewed.get("priorities")),
+               "site": {"homepage": reviewed.get("siteUrl") or ""}, "language": reviewed.get("language") or "en"}
+    revision = {"revisionId": reviewed.get("revisionId"), "reviewStatus": reviewed.get("reviewStatus") or "unreviewed", "changes": changes,
+                **_dict(reviewed.get("reviewer"))}
+    return build_client_report_context(audit_id=_text(reviewed.get("auditId")), machine=machine, revision=revision)

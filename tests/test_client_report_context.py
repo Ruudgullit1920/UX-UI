@@ -57,11 +57,18 @@ def test_ai_finding_already_in_deduplicated_list_is_not_repeated():
     assert [f["title"] for f in build(data)["findings"]].count("Links rely on colour") == 1
 
 
-def test_roadmap_buckets_by_priority():
+def test_roadmap_sequences_findings_by_severity():
     roadmap = build()["roadmap"]
-    assert [item["title"] for item in roadmap["now"]] == ["Label icon buttons"]
-    assert [item["title"] for item in roadmap["next"]] == ["Unify nav language"]
-    assert [item["title"] for item in roadmap["later"]] == ["Trim homepage"]
+    assert [item["title"] for item in roadmap["now"]] == ["Buttons must have discernible text"]
+    assert [item["title"] for item in roadmap["next"]] == ["Links rely on colour", "Blank thumbnail column"]
+    assert [item["title"] for item in roadmap["later"]] == ["Mixed-language navigation"]
+    assert roadmap["now"][0]["description"] == "Give every icon button an accessible name."
+
+
+def test_roadmap_lanes_are_capped():
+    data = machine()
+    data["aiDiscoveredFindings"] = [{"title": f"Issue {i}", "severity": "low"} for i in range(12)]
+    assert len(build(data)["roadmap"]["later"]) == 6
 
 
 def test_insights_take_titles_and_cap_at_four():
@@ -80,7 +87,7 @@ def test_top_priorities_and_strongest_weakest_axes():
 def test_review_label_and_audit_date():
     context = build(audit_date="2026-10-06")
     assert context["auditDate"] == "2026-10-06" and context["review"]["status"] == "validated"
-    assert build(revision=None)["review"]["label"] == "Automated audit — not yet reviewed"
+    assert build(revision=None)["review"]["label"] == "Automated audit — not reviewed"
 
 
 def test_context_is_json_serialisable_and_input_untouched():
@@ -94,3 +101,15 @@ def test_empty_machine_still_builds():
     context = build({}, revision=None)
     assert context["overall"]["score"] is None and context["findings"] == [] and context["axes"] == []
     assert context["kpis"] == {"pagesAudited": 0, "findings": 0, "critical": 0, "blockers": False}
+
+
+def test_passing_checks_are_not_findings():
+    data = machine()
+    data["deduplicatedFindings"].append({"deduplicationId": "ok", "title": "Has a skip link", "outcome": "pass", "severity": "high"})
+    assert "Has a skip link" not in [f["title"] for f in build(data)["findings"]]
+
+
+def test_same_defect_reported_twice_is_shown_once():
+    data = {"findings": [{"findingId": "f5", "deduplicationId": "d1", "title": "Same", "severity": "medium"},
+                         {"findingId": "f6", "deduplicationId": "d1", "title": "Same", "severity": "medium"}]}
+    assert len(build(data, revision=None)["findings"]) == 1

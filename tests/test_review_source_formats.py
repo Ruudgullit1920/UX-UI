@@ -20,8 +20,8 @@ def test_current_deduplicated_findings_keep_reviewer_fields_in_snapshot():
     assert len(context["completeFindings"]) == 1
     assert context["priorities"] == []
     rendered = render_reviewed_report(context)
-    assert "Reviewer priority: critical" in rendered
-    assert "Use &lt;strong&gt;contrast&lt;/strong&gt;" in rendered
+    # Suppressed findings leave the client report and are listed with their reason.
+    assert "Excluded by reviewer" in rendered and "Use &lt;strong&gt;" not in rendered
     assert "Duplicate" in rendered
     assert "review" not in finding  # Never mutate machine data.
 

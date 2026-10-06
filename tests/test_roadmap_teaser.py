@@ -152,18 +152,18 @@ def test_gtm_report_places_teaser_once_before_footer(tmp_path):
     assert "mail.google.com" not in report
 
 
-def test_reviewed_report_places_teaser_after_findings_before_body_end():
+def test_reviewed_report_places_expert_cta_after_findings_before_appendix():
     context = reviewed_report_context(audit_id="a1", machine={"allFindings": FINDINGS, "site": {"homepage": "https://acme.test"}}, revision=None)
     report = render_reviewed_report(context)
-    assert report.count('id="roadmap-teaser"') == 1
-    assert report.index("Complete findings") < report.index('id="roadmap-teaser"') < report.index("</body>")
+    assert report.count('id="next-steps"') == 1
+    assert report.index('id="findings"') < report.index('id="next-steps"') < report.index('id="appendix"')
 
 
 def test_exported_reports_omit_teaser_when_disabled(monkeypatch, tmp_path):
     monkeypatch.setenv("EXPERT_BOOKING_URL", "")
     context = reviewed_report_context(audit_id="a1", machine={"allFindings": FINDINGS}, revision=None)
     assert "roadmap-teaser" not in render_html(GTM_PAYLOAD, tmp_path)
-    assert "roadmap-teaser" not in render_reviewed_report(context)
+    assert "next-steps" not in render_reviewed_report(context)
 
 
 # --- Task 3: server endpoint and CSP ----------------------------------------
@@ -232,5 +232,5 @@ def test_reviewed_report_counts_exclude_suppressed_findings():
     revision = {"revisionId": "r1", "changes": {"f1": {"suppressed": True, "suppressionReason": "False positive"}}}
     context = reviewed_report_context(audit_id="a1", machine={"allFindings": FINDINGS}, revision=revision)
     report = render_reviewed_report(context)
-    teaser = report.split('id="roadmap-teaser"', 1)[1]
+    teaser = report.split('id="next-steps"', 1)[1]
     assert "<strong>1</strong> structural change<" in teaser
