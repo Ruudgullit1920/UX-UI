@@ -68,7 +68,7 @@ def test_roadmap_sequences_findings_by_severity():
 def test_roadmap_lanes_are_capped():
     data = machine()
     data["aiDiscoveredFindings"] = [{"title": f"Issue {i}", "severity": "low"} for i in range(12)]
-    assert len(build(data)["roadmap"]["later"]) == 6
+    assert len(build(data)["roadmap"]["later"]) == 5
 
 
 def test_insights_take_titles_and_cap_at_four():

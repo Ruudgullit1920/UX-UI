@@ -1895,6 +1895,23 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
                     HTTPStatus.INTERNAL_SERVER_ERROR,
                 )
             return
+        if parsed.path.startswith("/api/audits/") and parsed.path.endswith("/client-report.pdf"):
+            job_id = unquote(parsed.path.removeprefix("/api/audits/").removesuffix("/client-report.pdf").strip("/"))
+            if "/" in job_id or not self._require_owned_job(job_id, user): return
+            found, revision = _client_report_revision(job_id, parsed.query)
+            if not found:
+                self._send_json({"error": "Review revision not found."}, HTTPStatus.NOT_FOUND); return
+            from src.report.client import pdf as client_pdf
+            context, rendered = _machine_report_context(job_id, revision)
+            try:
+                body = client_pdf.render_pdf(rendered)
+            except client_pdf.PdfExportError as exc:
+                LOG.warning("request_id=%s event=client_report_pdf_failed error=%s", self._request_id(), exc)
+                self._send_json({"error": "PDF export is temporarily unavailable."}, HTTPStatus.SERVICE_UNAVAILABLE); return
+            filename = client_pdf.pdf_filename(context["site"]["name"], context["auditDate"])
+            self.send_response(HTTPStatus.OK); self.send_header("Content-Type", "application/pdf"); self.send_header("Content-Length", str(len(body)))
+            self.send_header("Content-Disposition", f'attachment; filename="{filename}"'); self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(body)
+            return
         if parsed.path.startswith("/api/audits/") and parsed.path.endswith("/client-report"):
             job_id = unquote(parsed.path.removeprefix("/api/audits/").removesuffix("/client-report").strip("/"))
             if "/" in job_id or not self._require_owned_job(job_id, user): return

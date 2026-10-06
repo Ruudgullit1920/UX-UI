@@ -160,6 +160,8 @@ code { font: 12px/1.4 ui-monospace, "Cascadia Code", Consolas, monospace; overfl
 #appendix li { margin-top: 6px; color: var(--ink-2); }
 .provenance { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; font-size: 12.5px; }
 .provenance th, .provenance td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+.provenance { table-layout: fixed; }
+.provenance th:nth-child(1) { width: 34%; } .provenance th:nth-child(2) { width: 15%; } .provenance th:nth-child(3) { width: 13%; } .provenance th:nth-child(4) { width: 22%; } .provenance th:nth-child(5) { width: 16%; }
 .provenance th { background: var(--canvas); font-weight: 700; color: var(--muted); }
 
 @media (max-width: 760px) {
@@ -186,4 +188,6 @@ code { font: 12px/1.4 ui-monospace, "Cascadia Code", Consolas, monospace; overfl
   .section-head, .group-head, .sub-head { break-after: avoid; }
   .has-image .finding-body { grid-template-columns: 1fr 1fr; }
   a { color: var(--ink); }
+  .lane li { padding: 8px 0; }
+  .lane li p { -webkit-line-clamp: 2; font-size: 9.5pt; }
 }

@@ -16,7 +16,7 @@ LIMITATIONS = [
     "AI interpretation of screenshots is probabilistic; contrast and focus order may need human confirmation.",
 ]
 REVIEWED = {"validated", "approved"}
-ROADMAP_LANE_LIMIT = 6
+ROADMAP_LANE_LIMIT = 5
 
 
 def _dict(value: Any) -> dict[str, Any]:
