@@ -1160,8 +1160,18 @@ def render_radar_chart(axes: list[Dict[str, Any]]) -> str:
     if not axes:
         return "<p class='empty'>No scoring data available.</p>"
 
-    labels = [axis_label(axis.get("id"), axis.get("shortName") or axis.get("name") or "Axis") for axis in axes]
-    values = [max(0.0, min(10.0, float(axis.get("score", 0)) / 10.0)) for axis in axes]
+    def radar_value(axis: Dict[str, Any]) -> float | None:
+        try:
+            return max(0.0, min(10.0, float(axis.get("score")) / 10.0))
+        except (TypeError, ValueError):
+            return None  # unscored: no applicable measured evidence this run
+
+    raw_values = [radar_value(axis) for axis in axes]
+    labels = [
+        axis_label(axis.get("id"), axis.get("shortName") or axis.get("name") or "Axis") + (" · not scored" if value is None else "")
+        for axis, value in zip(axes, raw_values)
+    ]
+    values = [0.0 if value is None else value for value in raw_values]
     count = len(labels)
     cx = 310
     cy = 250
