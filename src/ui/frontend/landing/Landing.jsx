@@ -183,7 +183,7 @@ export default function Landing() {
     try { window.history.replaceState(null, "", langHref(code)); } catch { /* URL stays as is */ }
   };
   return <div className="lp">
-    <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: structuredData(lang, t) }}/>
+    <script type="application/ld+json">{structuredData(lang, t)}</script>
     <a className="skip-link" href="#main-content">{t.skip}</a>
     <header className="lp-header">
       <a className="brand lp-brand" href={langHref(lang)} aria-label={t.home}><img className="brand-logo" src={logo} alt="" width="1000" height="390"/></a>
