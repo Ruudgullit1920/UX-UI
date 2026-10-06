@@ -51,3 +51,16 @@ def test_snapshot_context_is_image_free_json(api_server):
     job_id = seeded(api_server)
     context, rendered = server._machine_report_context(job_id, None)
     assert 'id="cover"' in rendered and "data:image" not in json.dumps(context)
+
+
+def test_embedded_view_leaves_the_call_to_action_to_the_app(api_server, monkeypatch):
+    from src.report.client import render
+    payload = {"bookingUrl": "https://cal.example/x", "expert": {"name": "E", "title": "T"}, "counts": {},
+               "copy": {"eyebrow": "e", "heading": "h", "body": "b", "cleanHeading": "h", "cleanBody": "b", "cta": "Book"}}
+    monkeypatch.setattr(render, "teaser_payload", lambda *a, **k: payload)
+    job_id = seeded(api_server)
+    full = request(api_server, "GET", f"/api/audits/{job_id}/client-report", token="token-a")[2].decode()
+    embedded = request(api_server, "GET", f"/api/audits/{job_id}/client-report?embed=1", token="token-a")[2].decode()
+    assert 'id="next-steps"' in full and 'id="next-steps"' not in embedded
+    assert "fonts.googleapis.com" in full and "fonts.googleapis.com" not in embedded  # the app CSP blocks web fonts
+    assert "fonts.googleapis.com" in full and "fonts.googleapis.com" not in embedded  # the app CSP blocks web fonts

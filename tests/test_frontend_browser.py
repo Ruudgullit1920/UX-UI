@@ -407,6 +407,7 @@ def test_finding_scale_filters_evidence_and_mobile_drill_in(ui, count):
     page, _, _ = ui
     complete(page, wait_for_review=False, count=count)
     page.get_by_role("link", name="Open report", exact=True).click()
+    page.get_by_role("button", name="Review / Edit", exact=True).click()  # the client report is the default view
     expect(page.locator(".finding-item")).to_have_count(min(count, 25))
     if count == 1:
         expect(page.get_by_label("Find a finding")).to_have_count(0)
@@ -681,7 +682,7 @@ def test_roadmap_teaser_hidden_when_booking_disabled(ui, monkeypatch):
     complete(page, wait_for_review=False)
     page.get_by_role("link", name="Open report", exact=True).click()
     expect(page.get_by_text("Local report", exact=True)).to_be_visible()
-    expect(page.locator(".report-content")).to_be_visible()
+    expect(page.get_by_title("Client report")).to_be_visible()
     expect(page.locator("#roadmap-teaser")).to_have_count(0)
 
 

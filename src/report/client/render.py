@@ -12,6 +12,7 @@ from src.report.roadmap_teaser import CHIP_LABELS, teaser_payload
 
 STYLES = Path(__file__).with_name("styles.css").read_text(encoding="utf-8")
 FONTS = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+FONT_LINKS = f'<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="{FONTS}">'
 SEVERITY_LABELS = {"critical": "Critical", "high": "High", "medium": "Medium", "low": "Low"}
 INSIGHTS = [("strengths", "Strength areas", "good"), ("improvements", "Critical improvement areas", "critical"),
             ("opportunities", "Other opportunities", "info"), ("recommendations", "Recommendations", "accent")]
@@ -166,12 +167,13 @@ def _appendix(c: dict[str, Any]) -> str:
     return _section("appendix", "06", "Appendix", body)
 
 
-def render_client_report(context: dict[str, Any], images: dict[str, str] | None = None) -> str:
+def render_client_report(context: dict[str, Any], images: dict[str, str] | None = None, *, embedded: bool = False) -> str:
+    """embedded: shown inside the app, which supplies its own booking teaser and blocks web fonts."""
     images = {k: v for k, v in (images or {}).items() if isinstance(v, str) and v.startswith("data:image/")}
     lang = esc((context.get("language") or "en").split("-")[0])
     title = f'{context["site"]["name"]} — UX/UI Audit Report'
     body = (_cover(context) + _executive(context) + _scorecard(context) + _insights(context)
-            + _findings(context, images) + _roadmap(context) + _next_steps(context) + _appendix(context))
+            + _findings(context, images) + _roadmap(context) + ("" if embedded else _next_steps(context)) + _appendix(context))
     return (f'<!doctype html><html lang="{lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
-            f'<title>{esc(title)}</title><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="{FONTS}">'
+            f'<title>{esc(title)}</title>{"" if embedded else FONT_LINKS}'
             f'<style>{STYLES}</style></head><body><main class="report">{body}</main></body></html>')

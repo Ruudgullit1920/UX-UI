@@ -479,7 +479,7 @@ def _machine_audit_data(job_id: str) -> dict[str, Any]:
 CLIENT_REPORT_CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com"
 
 
-def _machine_report_context(job_id: str, revision: dict[str, Any] | None) -> tuple[dict[str, Any], str]:
+def _machine_report_context(job_id: str, revision: dict[str, Any] | None, *, embedded: bool = False) -> tuple[dict[str, Any], str]:
     """The EY Studio+ client report: in-app view, deployed snapshot and PDF all render from here."""
     from src.report.client.context import build_client_report_context
     from src.report.client.crops import crop_all
@@ -488,7 +488,7 @@ def _machine_report_context(job_id: str, revision: dict[str, Any] | None) -> tup
     created = (JOB_STORE.get(job_id) or {}).get("createdAt")
     audit_date = time.strftime("%Y-%m-%d", time.localtime(created)) if isinstance(created, (int, float)) else None
     context = build_client_report_context(audit_id=job_id, machine=_machine_audit_data(job_id), revision=revision, audit_date=audit_date)
-    return context, render_client_report(context, crop_all(context["findings"]))
+    return context, render_client_report(context, crop_all(context["findings"]), embedded=embedded)
 
 
 def _client_report_revision(job_id: str, query: str) -> tuple[bool, dict[str, Any] | None]:
@@ -1918,7 +1918,8 @@ class AuditRequestHandler(BaseHTTPRequestHandler):
             found, revision = _client_report_revision(job_id, parsed.query)
             if not found:
                 self._send_json({"error": "Review revision not found."}, HTTPStatus.NOT_FOUND); return
-            body = _machine_report_context(job_id, revision)[1].encode("utf-8")
+            embedded = (parse_qs(parsed.query).get("embed") or [""])[0] == "1"
+            body = _machine_report_context(job_id, revision, embedded=embedded)[1].encode("utf-8")
             self.send_response(HTTPStatus.OK); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store"); self.send_header("Content-Security-Policy", CLIENT_REPORT_CSP); self.end_headers(); self.wfile.write(body)
             return
