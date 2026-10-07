@@ -47,8 +47,8 @@ def test_client_copy_never_names_the_model_or_internal_jargon():
     html = report()
     for word in ("Claude", "VLM", "machine finding", "Machine finding"):
         assert word not in html
-    appendix = html.index('id="appendix"')
-    assert html.index("standards_automated") > appendix
+    for raw in ("standards_automated", "deterministic_check", "axe-core", "button.icon"):
+        assert raw not in html
     assert "Identified by the AI agent" in html
 
 
@@ -108,3 +108,11 @@ def test_embedded_report_blends_into_the_app():
 def test_embedded_links_open_outside_the_report_frame():
     context = build_client_report_context(audit_id="a", machine=machine(), revision=None, audit_date="2026-10-06")
     assert '<base target="_blank">' in render_client_report(context, embedded=True)
+
+
+def test_appendix_explains_how_each_finding_was_verified():
+    html = report()
+    appendix = html[html.index('id="appendix"'):]
+    assert "How each finding was verified" in appendix and "Evidence provenance" not in appendix
+    assert "Automated accessibility test (WCAG)" in appendix and "AI agent review of screenshots" in appendix
+    assert "WCAG 4.1.2" in appendix and "<th>Element</th>" not in appendix

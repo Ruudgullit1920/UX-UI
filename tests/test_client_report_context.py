@@ -156,3 +156,23 @@ def test_non_finite_and_malformed_values_do_not_crash():
     assert context["overall"]["score"] is None and context["axes"][0]["band"] == "none"
     broken = build({"executiveSummary": "oops", "priorities": ["x", None], "findings": ["y"]}, revision=None)
     assert broken["findings"] == [] and broken["overall"]["score"] is None
+
+
+def test_findings_name_how_they_were_verified_in_plain_language():
+    context = build()
+    methods = {f["title"]: f["provenance"]["method"] for f in context["findings"]}
+    assert methods == {"Buttons must have discernible text": "Automated accessibility test (WCAG)",
+                       "Links rely on colour": "Automated checklist test on the page code",
+                       "Blank thumbnail column": "AI agent review of screenshots",
+                       "Mixed-language navigation": "AI agent review of screenshots"}
+    first = context["findings"][0]["provenance"]
+    assert first["standard"] == "WCAG 4.1.2" and first["page"] == "/"
+
+
+def test_appendix_counts_findings_per_verification_method_and_lists_page_paths():
+    appendix = build()["appendix"]
+    assert appendix["methods"] == [{"label": "Automated accessibility test (WCAG)", "count": 1},
+                                   {"label": "Automated checklist test on the page code", "count": 1},
+                                   {"label": "AI agent review of screenshots", "count": 2}]
+    assert [p["path"] for p in appendix["coverage"]] == ["/", "/cat"]
+    assert not any("GTM" in step for step in appendix["methodology"])

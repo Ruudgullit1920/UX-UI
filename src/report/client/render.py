@@ -155,11 +155,14 @@ def _next_steps(c: dict[str, Any]) -> str:
 def _appendix(c: dict[str, Any]) -> str:
     a = c["appendix"]
     listing = lambda items: "<ul>" + "".join(f"<li>{esc(item)}</li>" for item in items) + "</ul>"  # noqa: E731
-    pages = "<ul>" + "".join(f'<li>{_link(p["url"], p["name"] or p["url"])}</li>' for p in a["coverage"]) + "</ul>" if a["coverage"] else ""
-    rows = "".join(f'<tr><td>{esc(f["title"])}</td><td>{esc(f["provenance"]["source"])}</td><td>{esc(f["provenance"]["criterion"])}</td>'
-                   f'<td><code>{esc(f["provenance"]["selector"])}</code></td><td>{esc(f["provenance"]["measurementClass"])}</td></tr>' for f in c["findings"])
-    table = (f'<h3 class="sub-head">Evidence provenance</h3><table class="provenance"><thead><tr><th>Finding</th><th>Source</th><th>Criterion</th>'
-             f'<th>Element</th><th>Measurement</th></tr></thead><tbody>{rows}</tbody></table>') if rows else ""
+    pages = ('<ul class="page-list">' + "".join(f'<li>{_link(p["url"], p["path"])}{_p(p["name"], "page-title")}</li>' for p in a["coverage"]) + "</ul>") if a["coverage"] else ""
+    dash = lambda value: esc(value) if value else '<span class="muted">—</span>'  # noqa: E731
+    rows = "".join(f'<tr><td>{esc(f["title"])}</td><td>{esc(f["provenance"]["method"])}</td><td>{dash(f["provenance"]["standard"])}</td>'
+                   f'<td>{dash(f["provenance"]["page"])}</td></tr>' for f in c["findings"])
+    legend = '<ul class="method-legend">' + "".join(f'<li><strong>{m["count"]}</strong><span>{esc(m["label"])}</span></li>' for m in a["methods"]) + "</ul>"
+    table = (f'<h3 class="sub-head">How each finding was verified</h3><p class="sub-lead">Every finding is backed by at least one of these methods. '
+             f'Each figure is the number of findings it produced.</p>{legend}<table class="provenance"><thead><tr><th>Finding</th><th>How it was checked</th>'
+             f'<th>Standard</th><th>Page</th></tr></thead><tbody>{rows}</tbody></table>') if rows else ""
     excluded = ('<h3 class="sub-head">Excluded by reviewer</h3><ul>' + "".join(f'<li><strong>{esc(e["title"])}</strong>{" — " + esc(e["reason"]) if e["reason"] else ""}</li>' for e in c["excluded"]) + "</ul>") if c["excluded"] else ""
     body = (f'<div class="appendix-grid"><div><h3 class="sub-head">Methodology</h3>{listing(a["methodology"])}</div>'
             f'<div><h3 class="sub-head">Pages audited</h3>{pages or "<p>Not recorded.</p>"}</div>'

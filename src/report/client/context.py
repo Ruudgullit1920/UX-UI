@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import math
-from urllib.parse import urlparse
+import re
 from urllib.parse import urlparse
 from typing import Any
 
@@ -15,6 +15,15 @@ LIMITATIONS = [
     "Automated accessibility checks do not establish complete WCAG conformance.",
     "Performance figures are laboratory measurements, not field data from real visitors.",
     "AI interpretation of screenshots is probabilistic; contrast and focus order may need human confirmation.",
+]
+# Plain-language answer to "how do we know?", in the order the appendix lists them.
+METHODS = ("Automated accessibility test (WCAG)", "Automated checklist test on the page code", "Lab performance test",
+           "AI agent review of screenshots", "Expert visual review")
+METHODOLOGY = [
+    "Scope: we visited the homepage and the key pages a visitor relies on, and captured each one as it renders in a real browser.",
+    "Measure: every page was checked with automated accessibility tests (WCAG), a UX checklist measured on the page code, "
+    "and the AI agent's review of the screenshots.",
+    "Prioritise: findings were ranked by severity and business impact; only the most important ones drive the recommendations.",
 ]
 REVIEWED = {"validated", "approved"}
 ROADMAP_LANE_LIMIT = 5
@@ -65,11 +74,24 @@ def _identity(item: dict[str, Any]) -> str:
     return _text(item.get("findingId") or item.get("id") or item.get("deduplicationId"))
 
 
+def _method(item: dict[str, Any], source: str, ai: bool) -> str:
+    signals = " ".join((source, _text(item.get("measurementClass")), _text(item.get("ruleId")), _text(item.get("sources")), _text(item.get("sourceSheet")))).lower()
+    if ai or "ai_visual" in signals or "vision" in signals or "ai discovery" in signals:
+        return METHODS[3]
+    if "axe" in signals or "standards_automated" in signals:
+        return METHODS[0]
+    if "lighthouse" in signals or "performance" in signals:
+        return METHODS[2]
+    return METHODS[4] if "manual" in signals else METHODS[1]
+
+
 def _finding_record(item: dict[str, Any], key: str, ai: bool) -> dict[str, Any]:
     review = _dict(item.get("review"))
     override = _text(review.get("priorityOverride")).lower()
     bundle = _dict(item.get("evidenceBundle"))
     target = bundle.get("target")
+    source = _text(bundle.get("source") or item.get("measurementMethod") or ("AI agent" if ai else ""))
+    criterion = _text(item.get("wcagCriterion") or bundle.get("criterion"))
     return {
         "key": key, "title": _text(item.get("title")) or "Untitled finding",
         "severity": override if override in SEVERITIES else _severity(item.get("severity")),
@@ -80,8 +102,9 @@ def _finding_record(item: dict[str, Any], key: str, ai: bool) -> dict[str, Any]:
         "aiDiscovered": ai, "screenshotPath": _text(item.get("screenshotPath")),
         "visualRegion": item.get("visualRegion") if isinstance(item.get("visualRegion"), dict) else None,
         "evidenceBundle": bundle or None,
-        "provenance": {"source": _text(bundle.get("source") or item.get("measurementMethod") or ("AI agent" if ai else "")),
-                       "criterion": _text(item.get("wcagCriterion") or bundle.get("criterion")),
+        "provenance": {"source": source, "criterion": criterion, "method": _method(item, source, ai),
+                       "standard": f"WCAG {criterion}" if re.fullmatch(r"\d+\.\d+(\.\d+)?", criterion) else "",
+                       "page": urlparse(_text(item.get("pageUrl"))).path or ("/" if _text(item.get("pageUrl")) else _text(item.get("pageName"))),
                        "selector": _text(target.get("selector") if isinstance(target, dict) else target),
                        "measurementClass": _text(item.get("measurementClass")), "evidence": _text(item.get("evidence"))},
     }
@@ -166,9 +189,9 @@ def build_client_report_context(*, audit_id: str, machine: dict[str, Any], revis
         bucket = "now" if finding["severity"] in {"critical", "high"} else "next" if finding["severity"] == "medium" else "later"
         if len(roadmap[bucket]) < ROADMAP_LANE_LIMIT:
             roadmap[bucket].append({"title": finding["title"], "description": finding["recommendation"], "axis": finding["axis"]})
-    pages = [{"name": _text(p.get("page_name") or p.get("title")), "url": _text(p.get("page_url"))} for p in _list(machine.get("scannedPages")) if isinstance(p, dict)]
-    methodology = [": ".join(x for x in (_text(m.get("step")), _text(m.get("description"))) if x) if isinstance(m, dict) else _text(m)
-                   for m in _list(machine.get("methodology"))] or reviewed["methodology"]
+    pages = [{"name": _text(p.get("page_name") or p.get("title")), "url": _text(p.get("page_url")), "path": urlparse(_text(p.get("page_url"))).path or "/"}
+             for p in _list(machine.get("scannedPages")) if isinstance(p, dict)]
+    methods = [{"label": m, "count": n} for m in METHODS if (n := sum(1 for f in findings if f["provenance"]["method"] == m))]
     context = {
         "auditId": audit_id, "site": {"name": _text(site.get("domain")) or urlparse(_text(site.get("homepage") or site.get("url"))).netloc or "Audited site", "url": _text(site.get("homepage") or site.get("url"))},
         "language": _text(site.get("language") or machine.get("language")) or "en",
@@ -187,7 +210,7 @@ def build_client_report_context(*, audit_id: str, machine: dict[str, Any], revis
                      "opportunities": _capped([_title(s) for a in by_weakness for s in _list(a["_source"].get("opportunities"))]),
                      "recommendations": _capped([_title(r) for r in recommendations if _title(r) not in hidden])},
         "findings": findings, "excluded": excluded, "roadmap": roadmap,
-        "appendix": {"methodology": methodology, "coverage": pages, "limitations": LIMITATIONS},
+        "appendix": {"methodology": METHODOLOGY, "methods": methods, "coverage": pages, "limitations": LIMITATIONS},
     }
     return context
 
