@@ -744,6 +744,30 @@ def test_landing_reduced_motion_is_static(ui):
     assert reveals.count() > 0
     assert reveals.evaluate_all("nodes => nodes.filter(node => getComputedStyle(node).opacity !== '1').length") == 0
 
+
+def test_landing_how_it_works_follows_scroll(ui):
+    page, instance, _ = ui
+    page.goto(f"http://127.0.0.1:{instance.server_port}/")
+    steps = page.locator("ol.lp-how-steps > li")
+    stage = page.locator(".lp-how-stage")
+    assert stage.evaluate("node => getComputedStyle(node).position") == "sticky"
+    steps.nth(2).evaluate("node => node.scrollIntoView({block: 'center'})")
+    expect(steps.nth(2)).to_have_attribute("aria-current", "step")
+    for index in (0, 1):
+        expect(steps.nth(index)).not_to_have_attribute("aria-current", "step")
+    expect(stage).to_contain_text("Deployed")
+    expect(stage).to_be_in_viewport()
+    steps.nth(1).evaluate("node => node.scrollIntoView({block: 'center'})")
+    expect(steps.nth(1)).to_have_attribute("aria-current", "step")
+    expect(stage).to_contain_text("Coverage")
+    page.set_viewport_size({"width": 375, "height": 800})
+    assert stage.evaluate("node => getComputedStyle(node).position") != "sticky"
+    expect(stage).to_be_hidden()
+    panels = page.locator(".lp-how-step .lp-how-panel")
+    expect(panels).to_have_count(3)
+    for index in range(3):
+        expect(panels.nth(index)).to_be_visible()
+
 def _open_report_with_teaser(page):
     page.route(re.compile(r"https://(app\.)?cal\.com/.*"), lambda route: route.fulfill(content_type="text/html", body="<!doctype html><html lang='en'><title>Booking</title><body>Booking calendar</body></html>"))
     job, finding = complete(page, wait_for_review=False)
