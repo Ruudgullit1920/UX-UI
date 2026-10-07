@@ -85,6 +85,13 @@ def _method(item: dict[str, Any], source: str, ai: bool) -> str:
     return METHODS[4] if "manual" in signals else METHODS[1]
 
 
+def _page(item: dict[str, Any]) -> str:
+    url, name = _text(item.get("pageUrl")), _text(item.get("pageName"))
+    if url:
+        return urlparse(url).path or "/"
+    return "Site-wide" if name.lower() in {"", "the audited journey"} else name  # generate_gtm_audit's placeholder for cross-page findings
+
+
 def _finding_record(item: dict[str, Any], key: str, ai: bool) -> dict[str, Any]:
     review = _dict(item.get("review"))
     override = _text(review.get("priorityOverride")).lower()
@@ -104,7 +111,7 @@ def _finding_record(item: dict[str, Any], key: str, ai: bool) -> dict[str, Any]:
         "evidenceBundle": bundle or None,
         "provenance": {"source": source, "criterion": criterion, "method": _method(item, source, ai),
                        "standard": f"WCAG {criterion}" if re.fullmatch(r"\d+\.\d+(\.\d+)?", criterion) else "",
-                       "page": urlparse(_text(item.get("pageUrl"))).path or ("/" if _text(item.get("pageUrl")) else _text(item.get("pageName"))),
+                       "page": _page(item),
                        "selector": _text(target.get("selector") if isinstance(target, dict) else target),
                        "measurementClass": _text(item.get("measurementClass")), "evidence": _text(item.get("evidence"))},
     }

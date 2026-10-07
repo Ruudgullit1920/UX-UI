@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import html
+import math
 from pathlib import Path
 from typing import Any
 
@@ -57,14 +58,36 @@ def _section(section_id: str, number: str, title: str, body: str, *, lead: str =
             f'<span class="section-number">{number}</span><h2 id="{section_id}-title">{esc(title)}</h2>{_p(lead, "section-lead")}</header>{body}</section>')
 
 
+def _dot_field() -> str:
+    """Static rings of dots fading out from the score, an Antigravity-style particle field that prints."""
+    dots, palette = [], ("#5B3FD9", "#9AA1B5", "#9AA1B5", "#E8C300")
+    for ring in range(5, 21):  # rings 1-4 stay empty so the score reads cleanly
+        radius = ring * 26
+        count = round(2 * math.pi * radius / 30)
+        for step in range(count):
+            angle = 2 * math.pi * step / count + ring * 0.37
+            x, y = 400 + radius * math.cos(angle), 380 + radius * math.sin(angle) * 0.86
+            if 0 <= x <= 800 and 0 <= y <= 760:
+                fade = 1 - (ring - 5) / 16
+                dots.append(f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{0.8 + 1.8 * fade:.1f}" fill="{palette[(ring + step) % 4]}" opacity="{0.12 + 0.6 * fade:.2f}"/>')
+    return f'<svg class="cover-field" aria-hidden="true" viewBox="0 0 800 760">{"".join(dots)}</svg>'
+
+
 def _cover(c: dict[str, Any]) -> str:
-    overall = c["overall"]
+    overall, name = c["overall"], c["site"]["name"]
+    tier = "xl" if len(name) <= 12 else "lg" if len(name) <= 18 else "md" if len(name) <= 30 else "sm"
+    title = ".<wbr>".join(esc(part) for part in name.split("."))  # only ever break after a dot
     url = f'<p class="cover-url">{_link(c["site"]["url"], c["site"]["url"])}</p>' if c["site"]["url"] else ""
+    chips = "".join(f'<li><span>{label}</span>{value}</li>' for label, value in
+                    (("Audit date", _date(c["auditDate"])), ("Status", esc(c["review"]["label"])), ("Pages audited", c["kpis"]["pagesAudited"])))
     return (f'<section id="cover" class="cover"><div class="cover-top">{ey_studio_logo_svg("cover-logo")}<span class="confidential">Confidential · Client deliverable</span></div>'
-            f'<div class="cover-body"><div class="cover-text"><p class="eyebrow">UX/UI Audit Report</p><h1>{esc(c["site"]["name"])}</h1>{url}'
-            f'<dl class="cover-meta"><div><dt>Audit date</dt><dd>{_date(c["auditDate"])}</dd></div><div><dt>Status</dt><dd>{esc(c["review"]["label"])}</dd></div></dl></div>'
-            f'<div class="cover-score">{score_gauge(overall["score"], label="Overall UX score", size=220)}<p class="cover-score-label">Overall UX score</p>{_p(overall["rating"], "cover-rating")}</div></div>'
-            f'<p class="cover-foot">Prepared by EY Studio+ · Evidence-based assessment of usability, accessibility, navigation, visual hierarchy and content.</p></section>')
+            f'<div class="cover-hero"><p class="cover-eyebrow"><span class="eyebrow-dot"></span>UX/UI Audit Report</p>'
+            f'<h1 class="cover-title cover-title-{tier}">{title}</h1>{url}</div>'
+            f'<div class="cover-body"><div class="cover-text"><p class="cover-lead">An evidence-based assessment of usability, accessibility, navigation, '
+            f'visual hierarchy and content.</p><ul class="cover-chips">{chips}</ul></div>'
+            f'<div class="cover-score">{_dot_field()}{score_gauge(overall["score"], label="Overall UX score", size=230, stroke=6)}'
+            f'<p class="cover-score-label">Overall UX score</p>{_p(overall["rating"], "cover-rating")}</div></div>'
+            f'<p class="cover-foot">Prepared by EY Studio+</p></section>')
 
 
 def _kpi(value: str, label: str, note: str = "", tone: str = "") -> str:
@@ -157,12 +180,13 @@ def _appendix(c: dict[str, Any]) -> str:
     listing = lambda items: "<ul>" + "".join(f"<li>{esc(item)}</li>" for item in items) + "</ul>"  # noqa: E731
     pages = ('<ul class="page-list">' + "".join(f'<li>{_link(p["url"], p["path"])}{_p(p["name"], "page-title")}</li>' for p in a["coverage"]) + "</ul>") if a["coverage"] else ""
     dash = lambda value: esc(value) if value else '<span class="muted">—</span>'  # noqa: E731
-    rows = "".join(f'<tr><td>{esc(f["title"])}</td><td>{esc(f["provenance"]["method"])}</td><td>{dash(f["provenance"]["standard"])}</td>'
+    cited = any(f["provenance"]["standard"] for f in c["findings"])  # a column of dashes says nothing
+    rows = "".join(f'<tr><td>{esc(f["title"])}</td><td>{esc(f["provenance"]["method"])}</td>{f"<td>{dash(f['provenance']['standard'])}</td>" if cited else ""}'
                    f'<td>{dash(f["provenance"]["page"])}</td></tr>' for f in c["findings"])
     legend = '<ul class="method-legend">' + "".join(f'<li><strong>{m["count"]}</strong><span>{esc(m["label"])}</span></li>' for m in a["methods"]) + "</ul>"
     table = (f'<h3 class="sub-head">How each finding was verified</h3><p class="sub-lead">Every finding is backed by at least one of these methods. '
-             f'Each figure is the number of findings it produced.</p>{legend}<table class="provenance"><thead><tr><th>Finding</th><th>How it was checked</th>'
-             f'<th>Standard</th><th>Page</th></tr></thead><tbody>{rows}</tbody></table>') if rows else ""
+             f'Each figure is the number of findings it produced.</p>{legend}<table class="provenance{"" if cited else " no-standard"}"><thead><tr><th>Finding</th><th>How it was checked</th>'
+             f'{"<th>Standard</th>" if cited else ""}<th>Page</th></tr></thead><tbody>{rows}</tbody></table>') if rows else ""
     excluded = ('<h3 class="sub-head">Excluded by reviewer</h3><ul>' + "".join(f'<li><strong>{esc(e["title"])}</strong>{" — " + esc(e["reason"]) if e["reason"] else ""}</li>' for e in c["excluded"]) + "</ul>") if c["excluded"] else ""
     body = (f'<div class="appendix-grid"><div><h3 class="sub-head">Methodology</h3>{listing(a["methodology"])}</div>'
             f'<div><h3 class="sub-head">Pages audited</h3>{pages or "<p>Not recorded.</p>"}</div>'

@@ -116,3 +116,25 @@ def test_appendix_explains_how_each_finding_was_verified():
     assert "How each finding was verified" in appendix and "Evidence provenance" not in appendix
     assert "Automated accessibility test (WCAG)" in appendix and "AI agent review of screenshots" in appendix
     assert "WCAG 4.1.2" in appendix and "<th>Element</th>" not in appendix
+
+
+def test_cover_is_a_static_dot_field_with_a_headline_that_breaks_only_at_dots():
+    html = report()
+    cover = html[html.index('id="cover"'):html.index('id="executive-summary"')]
+    assert '<svg' in cover and 'class="cover-field"' in cover and 'aria-hidden="true"' in cover
+    assert 'class="cover-title cover-title-xl">managers.<wbr>tn</h1>' in cover
+    assert "Pages audited" in cover and "<script" not in html
+
+
+def test_cover_headline_steps_down_for_long_domains():
+    data = machine()
+    data["site"]["domain"] = "longer-client-name.co.uk"
+    assert 'class="cover-title cover-title-md">' in report(data)
+
+
+def test_standard_column_is_dropped_when_no_finding_cites_a_wcag_criterion():
+    data = machine()
+    data["deduplicatedFindings"][0]["evidenceBundle"].pop("criterion")
+    appendix = report(data)
+    appendix = appendix[appendix.index('id="appendix"'):]
+    assert "<th>Standard</th>" not in appendix and "<th>Page</th>" in appendix

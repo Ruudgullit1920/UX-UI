@@ -34,8 +34,8 @@ def _arc(cx: float, cy: float, r: float, start: float, end: float) -> str:
     return f"M{x1:.2f} {y1:.2f} A{r} {r} 0 {large} 1 {x2:.2f} {y2:.2f}"
 
 
-def score_gauge(score: float | None, *, label: str, size: int = 180) -> str:
-    stroke, c = 14, size / 2
+def score_gauge(score: float | None, *, label: str, size: int = 180, stroke: int = 14) -> str:
+    c = size / 2
     r = c - stroke / 2 - 2
     shown = "—" if score is None else str(round(score))
     aria = f"{label}: not scored" if score is None else f"{label}: {shown} out of 100"

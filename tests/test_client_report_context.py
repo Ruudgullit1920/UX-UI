@@ -176,3 +176,11 @@ def test_appendix_counts_findings_per_verification_method_and_lists_page_paths()
                                    {"label": "AI agent review of screenshots", "count": 2}]
     assert [p["path"] for p in appendix["coverage"]] == ["/", "/cat"]
     assert not any("GTM" in step for step in appendix["methodology"])
+
+
+def test_site_wide_findings_say_site_wide_not_the_generator_placeholder():
+    data = machine()
+    data["deduplicatedFindings"][1].pop("pageUrl")
+    data["deduplicatedFindings"][1]["pageName"] = "the audited journey"
+    pages = {f["title"]: f["provenance"]["page"] for f in build(data)["findings"]}
+    assert pages["Links rely on colour"] == "Site-wide" and pages["Mixed-language navigation"] == "Home"
