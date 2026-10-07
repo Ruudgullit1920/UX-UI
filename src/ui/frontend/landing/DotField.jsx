@@ -53,7 +53,7 @@ export default function DotField({ variant = "hero" }) {
     let dots = [], width = 0, height = 0, ratio = 1, frame = 0, start = 0, visible = typeof IntersectionObserver === "undefined";
 
     const paint = time => {
-      const elapsed = still ? Infinity : time - start;
+      const elapsed = still ? Infinity : start ? time - start : 0; // before the loop starts, the fade-in has not begun
       context.setTransform(ratio, 0, 0, ratio, 0, 0);
       context.clearRect(0, 0, width, height);
       for (const dot of dots) {

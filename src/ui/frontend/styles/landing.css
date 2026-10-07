@@ -4,9 +4,10 @@
   --lp-ink: #1F2430; --lp-ink-2: #3D4456; --lp-muted: #5B6275; --lp-line: #E4E7EF; --lp-canvas: #F7F8FC;
   --lp-accent: #5B3FD9; --lp-accent-soft: #EFEBFF; --lp-ey: #FFE600; --lp-header: 72px;
   --lp-ease: cubic-bezier(.2, .8, .2, 1);
-  display: grid; grid-template-rows: auto 1fr auto; min-height: 100svh; overflow-x: clip;
+  position: relative; display: grid; grid-template-rows: auto 1fr auto; min-height: 100svh; overflow-x: clip;
   background: var(--lp-canvas); color: var(--lp-ink);
 }
+.lp-top { position: absolute; top: 0; left: 0; width: 1px; height: 8px; pointer-events: none; }
 .lp-wrap { width: min(calc(100% - 48px), 1120px); margin-inline: auto; }
 .lp h1, .lp h2, .lp h3 { color: var(--lp-ink); }
 .lp p { color: var(--lp-ink-2); }
@@ -195,6 +196,10 @@ ol.lp-reveal.is-pending > li { opacity: 0; transform: translateY(16px); }
   .lp-actions { width: 100%; }
   .lp-actions a { flex: 1 1 100%; }
   .lp-open { padding: 0 12px; }
+}
+/* Small phones: the hero's own call to action sits right below, so the header keeps only logo and language. */
+@media (max-width: 419px) {
+  .lp-open { display: none; }
   .lp-header-actions { gap: 4px; }
   .lp-box b { display: none; }
   .lp-footer-lines { flex-direction: column; }

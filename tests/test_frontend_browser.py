@@ -679,6 +679,8 @@ def test_landing_header_turns_solid_after_hero(ui):
     page.goto(f"http://127.0.0.1:{instance.server_port}/")
     header = page.locator(".lp-header")
     expect(header).not_to_have_class(re.compile(r"\bis-solid\b"))
+    page.mouse.wheel(0, 260)
+    expect(header).to_have_class(re.compile(r"\bis-solid\b"))
     page.locator("#demo").scroll_into_view_if_needed()
     expect(header).to_have_class(re.compile(r"\bis-solid\b"))
     assert "blur" in header.evaluate("node => getComputedStyle(node).backdropFilter")
@@ -689,9 +691,11 @@ def test_landing_header_turns_solid_after_hero(ui):
 def test_landing_fits_every_width(ui, lang):
     page, instance, _ = ui
     page.goto(f"http://127.0.0.1:{instance.server_port}/?lang={lang}")
-    for width in [375, 768, 1024, 1440]:
+    for width in [320, 360, 375, 768, 1024, 1440]:
         page.set_viewport_size({"width": width, "height": 900})
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), width
+        clipped = page.locator(".lp-header a").evaluate_all("links => links.filter(link => link.offsetParent && link.getBoundingClientRect().right > innerWidth).map(link => link.textContent)")
+        assert clipped == [], (width, clipped)
         hero = page.locator(".lp-hero").bounding_box()
         assert hero["height"] >= 900 - 1, (width, hero)
         axe(page)
@@ -794,6 +798,16 @@ def test_landing_dot_field_draws_and_moves(ui):
     page.wait_for_timeout(300)
     assert field.evaluate("canvas => canvas.toDataURL()") == first
 
+
+def test_landing_dot_field_first_paint_starts_blank(ui):
+    page, instance, _ = ui
+    # Freeze the loop so only the first paint remains, and start the clock 5 s in, as on a slow load.
+    page.add_init_script("window.requestAnimationFrame = () => 0; const now = performance.now.bind(performance); performance.now = () => now() + 5000;")
+    _landing_in_motion(page, instance)
+    page.wait_for_timeout(1000)
+    field = page.locator(".lp-hero canvas.lp-field")
+    expect(field).to_have_attribute("data-dots", re.compile(r"^[1-9]\d*$"))
+    assert field.evaluate(INKED_PIXELS) == 0
 
 def test_landing_dot_field_limits(ui):
     page, instance, _ = ui

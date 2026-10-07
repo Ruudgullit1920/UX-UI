@@ -180,7 +180,8 @@ export default function Landing() {
   const [lang, setLang] = useState(initialLang);
   const t = COPY[lang];
   useDocumentHead(lang, t);
-  const [heroRef, heroInView] = useInView({ rootMargin: "-80px 0px 0px 0px" });
+  // The header turns solid as soon as the page scrolls, before the headline can slide under it.
+  const [topRef, atTop] = useInView();
   const chooseLang = (event, code) => {
     event.preventDefault();
     setLang(code);
@@ -189,8 +190,9 @@ export default function Landing() {
   };
   return <div className="lp">
     <script type="application/ld+json">{structuredData(lang, t)}</script>
+    <span className="lp-top" ref={topRef} aria-hidden="true"/>
     <a className="skip-link" href="#main-content">{t.skip}</a>
-    <header className={`lp-header ${heroInView ? "" : "is-solid"}`}>
+    <header className={`lp-header ${atTop ? "" : "is-solid"}`}>
       <div className="lp-wrap lp-header-inner">
         <a className="brand lp-brand" href={langHref(lang)} aria-label={t.home}><img className="brand-logo" src={logo} alt="" width="1000" height="390"/></a>
         <div className="lp-header-actions">
@@ -200,7 +202,7 @@ export default function Landing() {
       </div>
     </header>
     <main id="main-content" tabIndex={-1} className="lp-main">
-      <section className="lp-hero" aria-labelledby="lp-title" ref={heroRef}>
+      <section className="lp-hero" aria-labelledby="lp-title">
         <DotField variant="hero"/>
         <div className="lp-intro">
           <p className="lp-eyebrow"><span aria-hidden="true"/>{t.eyebrow}</p>
