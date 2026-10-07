@@ -740,6 +740,9 @@ def test_landing_reduced_motion_is_static(ui):
     page, instance, _ = ui
     page.goto(f"http://127.0.0.1:{instance.server_port}/")
     expect(page.locator(".lp-demo").get_by_role("status")).to_contain_text("UX/UI audit complete")
+    for field in (page.locator(".lp-hero canvas.lp-field"), page.locator(".lp-closing canvas.lp-field")):
+        expect(field).to_have_attribute("aria-hidden", "true")
+        assert field.evaluate(INKED_PIXELS) > 0
     reveals = page.locator(".lp-reveal, .lp-reveal > li")
     assert reveals.count() > 0
     assert reveals.evaluate_all("nodes => nodes.filter(node => getComputedStyle(node).opacity !== '1').length") == 0
@@ -767,6 +770,47 @@ def test_landing_how_it_works_follows_scroll(ui):
     expect(panels).to_have_count(3)
     for index in range(3):
         expect(panels.nth(index)).to_be_visible()
+
+
+INKED_PIXELS = """canvas => { const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+    let inked = 0; for (let i = 3; i < data.length; i += 4) if (data[i]) inked++; return inked; }"""
+CENTRE_ALPHA = "canvas => canvas.getContext('2d').getImageData(canvas.width >> 1, canvas.height >> 1, 1, 1).data[3]"
+
+
+def test_landing_dot_field_draws_and_moves(ui):
+    page, instance, _ = ui
+    _landing_in_motion(page, instance)
+    field = page.locator(".lp-hero canvas[aria-hidden=true]")
+    expect(field).to_have_count(1)
+    page.wait_for_timeout(1200)
+    assert field.evaluate(INKED_PIXELS) > 0
+    assert field.evaluate(CENTRE_ALPHA) == 0
+    first = field.evaluate("canvas => canvas.toDataURL()")
+    page.wait_for_timeout(300)
+    assert field.evaluate("canvas => canvas.toDataURL()") != first
+    page.locator(".lp-footer").scroll_into_view_if_needed()
+    page.wait_for_timeout(300)
+    first = field.evaluate("canvas => canvas.toDataURL()")
+    page.wait_for_timeout(300)
+    assert field.evaluate("canvas => canvas.toDataURL()") == first
+
+
+def test_landing_dot_field_limits(ui):
+    page, instance, _ = ui
+    page.set_viewport_size({"width": 1440, "height": 900})
+    page.goto(f"http://127.0.0.1:{instance.server_port}/")
+    field = page.locator(".lp-hero canvas.lp-field")
+    expect(field).to_have_attribute("data-dots", re.compile(r"^[1-9]\d*$"))
+    desktop = int(field.get_attribute("data-dots"))
+    assert desktop <= 1400
+    page.set_viewport_size({"width": 3840, "height": 2160})
+    expect(field).not_to_have_attribute("data-dots", str(desktop))
+    assert 0 < int(field.get_attribute("data-dots")) <= 1400
+    page.set_viewport_size({"width": 375, "height": 900})
+    expect(field).not_to_have_attribute("data-dots", str(desktop))
+    page.wait_for_timeout(200)
+    assert field.evaluate("canvas => canvas.width === Math.round(canvas.clientWidth * Math.min(devicePixelRatio, 2))")
+    assert field.evaluate(CENTRE_ALPHA) == 0
 
 def _open_report_with_teaser(page):
     page.route(re.compile(r"https://(app\.)?cal\.com/.*"), lambda route: route.fulfill(content_type="text/html", body="<!doctype html><html lang='en'><title>Booking</title><body>Booking calendar</body></html>"))

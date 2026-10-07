@@ -28,6 +28,8 @@ main.lp-main { width: auto; max-width: none; min-height: 0; margin: 0; padding: 
 
 /* Hero: full-bleed field behind centred text, pulled up under the transparent header. */
 .lp-hero { position: relative; display: grid; place-items: center; min-height: 100svh; margin-top: calc(-1 * var(--lp-header) - 1px); padding: calc(var(--lp-header) + 32px) 24px 64px; isolation: isolate; }
+/* The field sits behind the text and never takes the pointer from links. */
+.lp-field { position: absolute; inset: 0; z-index: 0; display: block; width: 100%; height: 100%; pointer-events: none; }
 .lp-intro { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; max-width: 1040px; text-align: center; }
 .lp-eyebrow { display: inline-flex; align-items: center; gap: 8px; padding: 6px 14px; border: 1px solid var(--lp-line); border-radius: 999px; background: rgba(255,255,255,.8); color: var(--lp-muted); font-size: .75rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; }
 .lp .lp-eyebrow { color: var(--lp-muted); }

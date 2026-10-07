@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import Icon from "../components/Icon.jsx";
 import Icon3D from "../components/Icon3D.jsx";
+import DotField from "./DotField.jsx";
 import HowItWorks from "./HowItWorks.jsx";
 import Reveal from "./Reveal.jsx";
 import useInView from "./useInView.js";
@@ -200,6 +201,7 @@ export default function Landing() {
     </header>
     <main id="main-content" tabIndex={-1} className="lp-main">
       <section className="lp-hero" aria-labelledby="lp-title" ref={heroRef}>
+        <DotField variant="hero"/>
         <div className="lp-intro">
           <p className="lp-eyebrow"><span aria-hidden="true"/>{t.eyebrow}</p>
           <h1 id="lp-title">{t.h1[0]}<span className="lp-word">{t.h1[1]}<i/><i/><i/><i/></span>{t.h1[2]}</h1>
@@ -222,6 +224,7 @@ export default function Landing() {
         <Reveal as="ol">{AXES.map((axis, index) => <li key={axis.id} style={{ "--i": index }}><h3>{axis.name[lang]}</h3><p>{axis.question[lang]}</p><p className="lp-axis-meta">{t.criteria(axis.criteria)} · {axis.standards.join(" · ")}</p></li>)}</Reveal>
       </section>
       <section className="lp-closing" aria-labelledby="lp-closing-title">
+        <DotField variant="quiet"/>
         <Reveal as="h2" id="lp-closing-title">{t.closing}</Reveal>
         <a className="lp-cta" href="/app">{t.cta}<Icon name="arrow" size={18}/></a>
       </section>
