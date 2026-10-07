@@ -673,6 +673,30 @@ def test_landing_how_it_works_and_copy(ui):
     text = page.evaluate("document.body.innerText")
     assert not [word for word in FORBIDDEN_COPY if word in text]
 
+
+def test_landing_header_turns_solid_after_hero(ui):
+    page, instance, _ = ui
+    page.goto(f"http://127.0.0.1:{instance.server_port}/")
+    header = page.locator(".lp-header")
+    expect(header).not_to_have_class(re.compile(r"\bis-solid\b"))
+    page.locator("#demo").scroll_into_view_if_needed()
+    expect(header).to_have_class(re.compile(r"\bis-solid\b"))
+    assert "blur" in header.evaluate("node => getComputedStyle(node).backdropFilter")
+    expect(page.locator(".lp-footer .lp-wordmark")).to_have_attribute("aria-hidden", "true")
+
+
+@pytest.mark.parametrize("lang", ["en", "fr"])
+def test_landing_fits_every_width(ui, lang):
+    page, instance, _ = ui
+    page.goto(f"http://127.0.0.1:{instance.server_port}/?lang={lang}")
+    for width in [375, 768, 1024, 1440]:
+        page.set_viewport_size({"width": width, "height": 900})
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), width
+        hero = page.locator(".lp-hero").bounding_box()
+        assert hero["height"] >= 900 - 1, (width, hero)
+        axe(page)
+        screenshot(page, f"landing-{lang}-{width}")
+
 def _open_report_with_teaser(page):
     page.route(re.compile(r"https://(app\.)?cal\.com/.*"), lambda route: route.fulfill(content_type="text/html", body="<!doctype html><html lang='en'><title>Booking</title><body>Booking calendar</body></html>"))
     job, finding = complete(page, wait_for_review=False)

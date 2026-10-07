@@ -24,11 +24,11 @@ function StepPanel({ index, lang, t, axes }) {
 
 export default function HowItWorks({ lang, t, axes }) {
   const active = 0;
-  return <section className="lp-how" aria-labelledby="lp-how-title">
+  return <section className="lp-wrap lp-how" aria-labelledby="lp-how-title">
     <h2 id="lp-how-title">{t.howTitle}</h2>
     <div className="lp-how-grid">
       <ol className="lp-how-steps">{t.steps.map(([title, text], index) => <li key={title} className="lp-how-step" aria-current={index === active ? "step" : undefined}>
-        <span className="lp-how-num" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+        <span className="lp-how-num" aria-hidden="true"/>
         <h3>{title}</h3>
         <p>{text}</p>
         <StepPanel index={index} lang={lang} t={t} axes={axes}/>

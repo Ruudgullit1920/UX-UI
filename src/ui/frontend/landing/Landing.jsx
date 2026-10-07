@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Icon from "../components/Icon.jsx";
 import Icon3D from "../components/Icon3D.jsx";
 import HowItWorks from "./HowItWorks.jsx";
+import useInView from "./useInView.js";
 import capture from "./assets/w3c-bad-citylights.jpg";
 import logo from "../assets/ey-studio-plus.png";
 
@@ -174,6 +175,7 @@ export default function Landing() {
   const [lang, setLang] = useState(initialLang);
   const t = COPY[lang];
   useDocumentHead(lang, t);
+  const [heroRef, heroInView] = useInView({ rootMargin: "-80px 0px 0px 0px" });
   const chooseLang = (event, code) => {
     event.preventDefault();
     setLang(code);
@@ -183,15 +185,17 @@ export default function Landing() {
   return <div className="lp">
     <script type="application/ld+json">{structuredData(lang, t)}</script>
     <a className="skip-link" href="#main-content">{t.skip}</a>
-    <header className="lp-header">
-      <a className="brand lp-brand" href={langHref(lang)} aria-label={t.home}><img className="brand-logo" src={logo} alt="" width="1000" height="390"/></a>
-      <div className="lp-header-actions">
-        <nav className="lp-lang" aria-label={t.language}>{Object.entries(LANGS).map(([code, label]) => <a key={code} href={langHref(code)} hrefLang={code} lang={code} aria-label={label} aria-current={code === lang ? "true" : undefined} onClick={event => chooseLang(event, code)}>{code.toUpperCase()}</a>)}</nav>
-        <a className="lp-open" href="/app">{t.openApp}</a>
+    <header className={`lp-header ${heroInView ? "" : "is-solid"}`}>
+      <div className="lp-wrap lp-header-inner">
+        <a className="brand lp-brand" href={langHref(lang)} aria-label={t.home}><img className="brand-logo" src={logo} alt="" width="1000" height="390"/></a>
+        <div className="lp-header-actions">
+          <nav className="lp-lang" aria-label={t.language}>{Object.entries(LANGS).map(([code, label]) => <a key={code} href={langHref(code)} hrefLang={code} lang={code} aria-label={label} aria-current={code === lang ? "true" : undefined} onClick={event => chooseLang(event, code)}>{code.toUpperCase()}</a>)}</nav>
+          <a className="lp-open" href="/app">{t.openApp}</a>
+        </div>
       </div>
     </header>
     <main id="main-content" tabIndex={-1} className="lp-main">
-      <section className="lp-hero" aria-labelledby="lp-title">
+      <section className="lp-hero" aria-labelledby="lp-title" ref={heroRef}>
         <div className="lp-intro">
           <p className="lp-eyebrow"><span aria-hidden="true"/>{t.eyebrow}</p>
           <h1 id="lp-title">{t.h1[0]}<span className="lp-word">{t.h1[1]}<i/><i/><i/><i/></span>{t.h1[2]}</h1>
@@ -203,12 +207,12 @@ export default function Landing() {
           <div className="lp-sources"><span>{t.sources}</span><ul>{SOURCES.map(id => <li key={id} title={t.sourceLabels[id]}><Icon3D name={id} size={30}/><span className="sr-only">{t.sourceLabels[id]}</span></li>)}</ul></div>
         </div>
       </section>
-      <section id="demo" className="lp-demo-section" aria-labelledby="lp-demo-title">
+      <section id="demo" className="lp-wrap lp-demo-section" aria-labelledby="lp-demo-title">
         <h2 id="lp-demo-title" className="sr-only">{t.seeIt}</h2>
         <AuditDemo lang={lang} t={t}/>
       </section>
       <HowItWorks lang={lang} t={t} axes={AXES}/>
-      <section className="lp-axes" aria-labelledby="lp-axes-title">
+      <section className="lp-wrap lp-axes" aria-labelledby="lp-axes-title">
         <h2 id="lp-axes-title">{t.axesTitle}</h2>
         <p className="lp-axes-lead">{t.axesLead}</p>
         <ol>{AXES.map(axis => <li key={axis.id}><h3>{axis.name[lang]}</h3><p>{axis.question[lang]}</p><p className="lp-axis-meta">{t.criteria(axis.criteria)} · {axis.standards.join(" · ")}</p></li>)}</ol>
@@ -218,6 +222,9 @@ export default function Landing() {
         <a className="lp-cta" href="/app">{t.cta}<Icon name="arrow" size={18}/></a>
       </section>
     </main>
-    <footer className="lp-footer"><span>{t.footer[0]}</span><span>{t.footer[1]}</span><span className="lp-wordmark" aria-hidden="true">EY Studio+</span></footer>
+    <footer className="lp-footer">
+      <div className="lp-wrap lp-footer-lines"><span>{t.footer[0]}</span><span>{t.footer[1]}</span></div>
+      <span className="lp-wordmark" aria-hidden="true"/>
+    </footer>
   </div>;
 }
