@@ -22,7 +22,7 @@
 .lp-lang a { display: inline-flex; align-items: center; justify-content: center; min-width: 44px; min-height: 32px; padding: 0 10px; border-radius: 999px; color: var(--lp-muted); font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-decoration: none; }
 .lp-lang a:hover { color: var(--lp-ink); }
 .lp-lang a[aria-current] { background: var(--lp-ink); color: #fff; }
-.lp-open { display: inline-flex; align-items: center; min-height: 40px; white-space: nowrap; padding: 0 16px; border-radius: 999px; color: var(--lp-ink); font-size: .875rem; font-weight: 600; text-decoration: none; }
+.lp-open { display: inline-flex; align-items: center; min-height: 40px; white-space: nowrap; white-space: nowrap; padding: 0 16px; border-radius: 999px; color: var(--lp-ink); font-size: .875rem; font-weight: 600; text-decoration: none; }
 .lp-open:hover { background: rgba(31,36,48,.06); }
 main.lp-main { width: auto; max-width: none; min-height: 0; margin: 0; padding: 0; }
 
@@ -60,6 +60,13 @@ main.lp-main { width: auto; max-width: none; min-height: 0; margin: 0; padding: 
 .lp-main > section:not(.lp-hero) { margin-top: clamp(80px, 11vw, 140px); }
 .lp-main h2 { font-size: clamp(2rem, 4.4vw, 3.5rem); font-weight: 800; line-height: 1.02; letter-spacing: -.04em; text-align: center; text-wrap: balance; }
 .lp-demo-section { scroll-margin-top: calc(var(--lp-header) + 24px); }
+/* Reveals: content is visible by default; Reveal adds is-pending only when it can take it away again. */
+.lp-reveal, ol.lp-reveal > li { transition: opacity 500ms var(--lp-ease), transform 500ms var(--lp-ease); }
+.lp-reveal.is-pending { opacity: 0; transform: translateY(16px); }
+ol.lp-reveal { transition: none; }
+ol.lp-reveal.is-pending { opacity: 1; transform: none; }
+ol.lp-reveal > li { transition-delay: calc(var(--i, 0) * 60ms); }
+ol.lp-reveal.is-pending > li { opacity: 0; transform: translateY(16px); }
 .lp-main > .lp-demo-section { margin-top: 0; }
 
 /* Demo: capture and audit log side by side, so no finding is ever covered. */
@@ -99,6 +106,8 @@ main.lp-main { width: auto; max-width: none; min-height: 0; margin: 0; padding: 
 .lp-log-foot button { min-height: 32px; padding: 4px 14px; border: 1px solid var(--lp-line); border-radius: 999px; background: #fff; color: var(--lp-ink-2); font-size: .75rem; font-weight: 600; }
 .lp-log-foot button:not(:disabled):hover { border-color: #C9CEDB; color: var(--lp-ink); }
 .is-running .lp-log-foot span { visibility: hidden; }
+/* Idle: every animation waits at its first frame until the capture scrolls into view. */
+.is-idle .lp-scan, .is-idle .lp-box, .is-idle .lp-log li, .is-idle .lp-dims li { animation-play-state: paused; }
 .lp-demo figcaption { grid-column: 1; margin: 0; color: var(--lp-muted); font-size: .75rem; }
 
 /* How it works: numbered steps beside one panel for the active step. */
@@ -158,7 +167,7 @@ main.lp-main { width: auto; max-width: none; min-height: 0; margin: 0; padding: 
 @keyframes lp-dim { from { border-color: var(--lp-line); background: #fff; color: var(--lp-muted); } to { border-color: var(--color-success-line); background: var(--color-success-bg); color: var(--color-success); } }
 @keyframes lp-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
-  .lp-header, .lp-how-num, .lp-how-rail b { transition: none; }
+  .lp-header, .lp-how-num, .lp-how-rail b, .lp-reveal, ol.lp-reveal > li { transition: none; }
   .lp-intro > *, .lp-box, .lp-log li, .lp-dims li { animation: none; }
   .lp-scan { display: none; }
   .lp-cta:hover, .lp-cta:hover svg { transform: none; }

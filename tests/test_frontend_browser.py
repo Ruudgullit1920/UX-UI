@@ -697,6 +697,53 @@ def test_landing_fits_every_width(ui, lang):
         axe(page)
         screenshot(page, f"landing-{lang}-{width}")
 
+
+def _landing_in_motion(page, instance, query=""):
+    page.emulate_media(reduced_motion="no-preference")
+    page.goto(f"http://127.0.0.1:{instance.server_port}/{query}")
+
+
+def test_landing_demo_starts_when_scrolled_into_view(ui):
+    page, instance, _ = ui
+    _landing_in_motion(page, instance)
+    status = page.locator(".lp-demo").get_by_role("status")
+    page.wait_for_timeout(4000)  # longer than one full scan: an on-mount start would be complete by now
+    expect(status).not_to_contain_text("UX/UI audit complete")
+    page.locator(".lp-browser").scroll_into_view_if_needed()
+    expect(status).to_contain_text("UX/UI audit complete", timeout=8000)
+    expect(page.locator(".lp-log ol li")).to_have_count(5)
+    expect(page.locator(".lp-dims li")).to_have_count(7)
+    expect(page.get_by_text("Measured · axe-core", exact=True)).to_have_count(1)
+    page.get_by_role("button", name="Replay").click()
+    expect(status).not_to_contain_text("UX/UI audit complete")
+    expect(status).to_contain_text("UX/UI audit complete", timeout=8000)
+
+
+def test_landing_demo_starts_on_a_phone(ui):
+    page, instance, _ = ui
+    page.set_viewport_size({"width": 375, "height": 667})
+    _landing_in_motion(page, instance)
+    page.locator(".lp-browser").scroll_into_view_if_needed()
+    expect(page.locator(".lp-demo").get_by_role("status")).to_contain_text("UX/UI audit complete", timeout=8000)
+
+
+def test_landing_see_it_work_jumps_to_the_demo(ui):
+    page, instance, _ = ui
+    _landing_in_motion(page, instance)
+    page.get_by_role("link", name="See it work").click()
+    expect(page.locator(".lp-demo").get_by_role("status")).to_contain_text("UX/UI audit complete", timeout=8000)
+    header = page.locator(".lp-header").bounding_box()
+    assert page.locator("#demo").bounding_box()["y"] >= header["y"] + header["height"]
+
+
+def test_landing_reduced_motion_is_static(ui):
+    page, instance, _ = ui
+    page.goto(f"http://127.0.0.1:{instance.server_port}/")
+    expect(page.locator(".lp-demo").get_by_role("status")).to_contain_text("UX/UI audit complete")
+    reveals = page.locator(".lp-reveal, .lp-reveal > li")
+    assert reveals.count() > 0
+    assert reveals.evaluate_all("nodes => nodes.filter(node => getComputedStyle(node).opacity !== '1').length") == 0
+
 def _open_report_with_teaser(page):
     page.route(re.compile(r"https://(app\.)?cal\.com/.*"), lambda route: route.fulfill(content_type="text/html", body="<!doctype html><html lang='en'><title>Booking</title><body>Booking calendar</body></html>"))
     job, finding = complete(page, wait_for_review=False)

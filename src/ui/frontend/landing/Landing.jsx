@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Icon from "../components/Icon.jsx";
 import Icon3D from "../components/Icon3D.jsx";
 import HowItWorks from "./HowItWorks.jsx";
+import Reveal from "./Reveal.jsx";
 import useInView from "./useInView.js";
 import capture from "./assets/w3c-bad-citylights.jpg";
 import logo from "../assets/ey-studio-plus.png";
@@ -137,15 +138,18 @@ function reducedMotion() {
 function AuditDemo({ lang, t }) {
   const [run, setRun] = useState(0);
   const [done, setDone] = useState(reducedMotion);
+  // The scan waits until the capture itself is 40% visible: the whole figure can be taller than a phone screen.
+  const [frameRef, seen] = useInView({ threshold: .4, once: true });
   useEffect(() => {
     if (reducedMotion()) { setDone(true); return undefined; }
     setDone(false);
+    if (!seen) return undefined;
     const timer = setTimeout(() => setDone(true), SCAN_MS + 600);
     return () => clearTimeout(timer);
-  }, [run]);
+  }, [run, seen]);
   const pct = (value, total) => `${(value / total) * 100}%`;
-  return <figure className={`lp-demo ${done ? "is-done" : "is-running"}`} key={run}>
-    <div className="lp-browser">
+  return <figure className={`lp-demo ${done ? "is-done" : seen ? "is-running" : "is-idle is-running"}`} key={run}>
+    <div className="lp-browser" ref={frameRef}>
       <div className="lp-browser-bar" aria-hidden="true"><i/><i/><i/><span>citylights · W3C demo site</span></div>
       <div className="lp-shot">
         <img src={capture} width={W} height={H} alt={t.alt}/>
@@ -213,12 +217,12 @@ export default function Landing() {
       </section>
       <HowItWorks lang={lang} t={t} axes={AXES}/>
       <section className="lp-wrap lp-axes" aria-labelledby="lp-axes-title">
-        <h2 id="lp-axes-title">{t.axesTitle}</h2>
-        <p className="lp-axes-lead">{t.axesLead}</p>
-        <ol>{AXES.map(axis => <li key={axis.id}><h3>{axis.name[lang]}</h3><p>{axis.question[lang]}</p><p className="lp-axis-meta">{t.criteria(axis.criteria)} · {axis.standards.join(" · ")}</p></li>)}</ol>
+        <Reveal as="h2" id="lp-axes-title">{t.axesTitle}</Reveal>
+        <Reveal as="p" className="lp-axes-lead">{t.axesLead}</Reveal>
+        <Reveal as="ol">{AXES.map((axis, index) => <li key={axis.id} style={{ "--i": index }}><h3>{axis.name[lang]}</h3><p>{axis.question[lang]}</p><p className="lp-axis-meta">{t.criteria(axis.criteria)} · {axis.standards.join(" · ")}</p></li>)}</Reveal>
       </section>
       <section className="lp-closing" aria-labelledby="lp-closing-title">
-        <h2 id="lp-closing-title">{t.closing}</h2>
+        <Reveal as="h2" id="lp-closing-title">{t.closing}</Reveal>
         <a className="lp-cta" href="/app">{t.cta}<Icon name="arrow" size={18}/></a>
       </section>
     </main>

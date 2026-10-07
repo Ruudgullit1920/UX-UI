@@ -1,6 +1,7 @@
 import { Fragment } from "react";
 import Icon from "../components/Icon.jsx";
 import capture from "./assets/w3c-bad-citylights.jpg";
+import Reveal from "./Reveal.jsx";
 
 // Three steps from capture to sign-off. Wide screens show one panel beside the list for the active step;
 // narrow screens show each step's panel inline instead.
@@ -25,7 +26,7 @@ function StepPanel({ index, lang, t, axes }) {
 export default function HowItWorks({ lang, t, axes }) {
   const active = 0;
   return <section className="lp-wrap lp-how" aria-labelledby="lp-how-title">
-    <h2 id="lp-how-title">{t.howTitle}</h2>
+    <Reveal as="h2" id="lp-how-title">{t.howTitle}</Reveal>
     <div className="lp-how-grid">
       <ol className="lp-how-steps">{t.steps.map(([title, text], index) => <li key={title} className="lp-how-step" aria-current={index === active ? "step" : undefined}>
         <span className="lp-how-num" aria-hidden="true"/>
