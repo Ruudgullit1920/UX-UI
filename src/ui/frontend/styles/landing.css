@@ -72,14 +72,23 @@ main.lp-main { width: auto; max-width: none; min-height: 0; margin: 0; padding: 
 .is-running .lp-log-foot span { visibility: hidden; }
 .lp-demo figcaption { margin: 0; color: var(--slate-600); font-size: .75rem; }
 
-/* Benefits: 3D icon, claim, and a small proof of what the claim looks like in the tool. */
-.lp-benefits { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin: 64px 0 0; padding: 0; list-style: none; }
-.lp-benefits li { display: grid; grid-template-rows: auto auto 1fr auto; gap: 8px; padding: 22px; border: 1px solid var(--slate-200); border-radius: 18px; background: #fff; box-shadow: var(--shadow); transition: transform var(--motion-fast), box-shadow var(--motion-fast); }
-.lp-benefits li:hover { transform: translateY(-3px); box-shadow: var(--shadow-float); }
-.lp-benefits .icon-3d { margin-bottom: 6px; }
-.lp-benefits h2 { font-size: 1.0625rem; letter-spacing: -.015em; }
-.lp-benefits p { font-size: .875rem; line-height: 1.55; }
-.lp-proof { display: flex; align-items: center; min-height: 36px; margin-top: 8px; padding-top: 12px; border-top: 1px dashed var(--slate-200); font-size: .75rem; }
+/* How it works: numbered steps beside one panel for the active step. */
+.lp-header-actions { display: flex; align-items: center; gap: 12px; }
+.lp-open, .lp-ghost { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border: 1px solid var(--slate-200); border-radius: var(--radius-pill); color: var(--slate-900); font-weight: 600; text-decoration: none; }
+.lp-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 24px; }
+.lp-actions .lp-cta { margin-top: 0; }
+.lp-eyebrow { color: var(--slate-600); font-size: .75rem; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+.lp-how { margin: 72px 0 0; }
+.lp-how-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 32px; margin-top: 32px; }
+.lp-how-steps { display: grid; gap: 24px; margin: 0; padding: 0; list-style: none; }
+.lp-how-step .lp-how-panel { display: none; }
+.lp-how-panel { position: relative; display: grid; gap: 12px; padding: 20px; border: 1px solid var(--slate-200); border-radius: 18px; background: #fff; }
+.lp-how-capture img { display: block; width: 100%; height: auto; }
+.lp-how-capture span { position: absolute; border: 2px solid var(--color-danger); border-radius: 3px; }
+.lp-how-axes { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.lp-how-axes li { padding: 3px 9px; border: 1px solid var(--slate-200); border-radius: var(--radius-pill); font-size: .75rem; }
+.lp-closing { margin: 72px 0 0; text-align: center; }
+.lp-wordmark { display: none; }
 .lp-proof code { padding: 4px 8px; border-radius: 6px; background: var(--ey-navy); color: #fff; font-size: 11px; white-space: nowrap; }
 .lp-meter { display: flex; align-items: center; gap: 8px; width: 100%; color: var(--slate-600); }
 .lp-meter i { flex: 1; height: 6px; border-radius: var(--radius-pill); background: var(--slate-200); }
@@ -108,17 +117,19 @@ main.lp-main { width: auto; max-width: none; min-height: 0; margin: 0; padding: 
 @media (prefers-reduced-motion: reduce) {
   .lp-scan { display: none; }
   .lp-box, .lp-log li, .lp-dims li { animation: none; }
-  .lp-cta:hover, .lp-benefits li:hover { transform: none; }
+  .lp-cta:hover { transform: none; }
 }
 
 @media (max-width: 1024px) { .lp-demo { grid-template-columns: minmax(0, 1fr) 300px; } }
 @media (max-width: 900px) {
   .lp-demo { grid-template-columns: 1fr; }
   .lp-demo figcaption { grid-row: 2; }
+  .lp-how-grid { grid-template-columns: 1fr; }
+  .lp-how-stage { display: none; }
+  .lp-how-step .lp-how-panel { display: grid; margin-top: 12px; }
 }
 @media (max-width: 720px) {
   .lp { width: calc(100% - 32px); }
-  .lp-benefits { grid-template-columns: 1fr; margin-top: 40px; }
   .lp-axes { margin-top: 48px; }
   .lp-cta { width: 100%; justify-content: center; }
   .lp-box b { display: none; }

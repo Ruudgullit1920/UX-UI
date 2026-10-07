@@ -1,6 +1,7 @@
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Icon from "../components/Icon.jsx";
 import Icon3D from "../components/Icon3D.jsx";
+import HowItWorks from "./HowItWorks.jsx";
 import capture from "./assets/w3c-bad-citylights.jpg";
 import logo from "../assets/ey-studio-plus.png";
 
@@ -49,12 +50,14 @@ const COPY = {
     expert: "Expert review", measured: "Measured · axe-core",
     tally: <><b>5</b> issues across 7 axes</>, replay: "Replay",
     caption: "Real capture of W3C’s Before-and-After Demonstration (inaccessible version). Contrast is measured by axe-core 4.11; the other findings are expert review of this capture.",
-    benefitsLabel: "Why teams use it",
-    benefits: [
-      ["Proof for every finding", "Each issue points to the element, the screen and the standard it breaks: WCAG 2.2, Nielsen heuristics or Baymard research."],
-      ["Scores you can trust", "Each axis gets a 0–100 score and a maturity level, weighted by severity and product type, with the share of criteria actually measured."],
-      ["A specialist signs off", "AI findings only count with 80% confidence and cited evidence. A specialist reviews every finding before a report is published."],
+    openApp: "Open the app", seeIt: "See it work",
+    howTitle: "How every audit is built",
+    steps: [
+      ["Capture every screen.", "Point it at a URL, screenshots, an Android app or a Figma file. It records each screen and the elements on it."],
+      [`Check 7 axes, ${CRITERIA_TOTAL} criteria.`, "Automated tools measure what can be measured; the AI agent reviews the rest and keeps a finding only with 80% confidence and cited evidence. Each axis is scored out of 100."],
+      ["A specialist signs off.", "Every finding is reviewed before the report is published, in the app, as a shareable link and as a PDF."],
     ],
+    closing: "See the evidence behind your product’s UX.",
     coverage: "Coverage", flow: ["Draft", "Saved", "Deployed"],
     axesTitle: "What every UX/UI audit checks",
     axesLead: `7 axes and ${CRITERIA_TOTAL} criteria grounded in WCAG 2.2, Nielsen Norman Group heuristics, Baymard research and Core Web Vitals. Each axis is scored out of 100 and rated from 1 (Critical) to 5 (Excellent).`,
@@ -77,12 +80,14 @@ const COPY = {
     expert: "Revue d’expert", measured: "Mesuré · axe-core",
     tally: <><b>5</b> problèmes sur 7 axes</>, replay: "Rejouer",
     caption: "Capture réelle de la démonstration Avant/Après du W3C (version inaccessible). Le contraste est mesuré par axe-core 4.11 ; les autres constats relèvent d’une revue d’expert de cette capture.",
-    benefitsLabel: "Pourquoi les équipes l’utilisent",
-    benefits: [
-      ["Une preuve pour chaque constat", "Chaque problème renvoie à l’élément, à l’écran et au référentiel enfreint : WCAG 2.2, heuristiques de Nielsen ou recherches Baymard."],
-      ["Des scores fiables", "Chaque axe reçoit un score sur 100 et un niveau de maturité, pondérés par la sévérité et le type de produit, avec la part des critères réellement mesurés."],
-      ["Validé par un spécialiste", "Les constats de l’IA ne comptent qu’à 80 % de confiance avec une preuve citée. Un spécialiste relit chaque constat avant publication."],
+    openApp: "Ouvrir l’application", seeIt: "Voir l’audit en action",
+    howTitle: "Comment chaque audit est construit",
+    steps: [
+      ["Capturer chaque écran.", "Indiquez une URL, des captures, une app Android ou un fichier Figma. L’outil enregistre chaque écran et ses éléments."],
+      [`Vérifier 7 axes, ${CRITERIA_TOTAL} critères.`, "Les outils automatisés mesurent ce qui est mesurable ; l’agent IA examine le reste et ne retient un constat qu’avec 80 % de confiance et une preuve citée. Chaque axe est noté sur 100."],
+      ["Validé par un spécialiste.", "Chaque constat est relu avant publication : dans l’application, en lien partageable et en PDF."],
     ],
+    closing: "Voyez les preuves derrière l’UX de votre produit.",
     coverage: "Couverture", flow: ["Brouillon", "Enregistré", "Publié"],
     axesTitle: "Ce que vérifie chaque audit UX/UI",
     axesLead: `7 axes et ${CRITERIA_TOTAL} critères fondés sur les WCAG 2.2, les heuristiques de Nielsen Norman Group, les recherches Baymard et les Core Web Vitals. Chaque axe est noté sur 100 et classé de 1 (Critique) à 5 (Excellent).`,
@@ -91,7 +96,6 @@ const COPY = {
   },
 };
 const SOURCES = ["website", "screenshot", "mobile", "figma"];
-const BENEFIT_ICONS = ["evidence", "coverage", "review"];
 
 const langHref = lang => (lang === "en" ? "/" : `/?lang=${lang}`);
 
@@ -158,12 +162,6 @@ function AuditDemo({ lang, t }) {
   </figure>;
 }
 
-function benefitProof(index, t) {
-  if (index === 0) return <code>select · WCAG 4.1.2 · axe-core</code>;
-  if (index === 1) return <span className="lp-meter"><span>{t.coverage}</span><i><b style={{ width: "85%" }}/></i><em>85%</em></span>;
-  return <span className="lp-flow">{t.flow.map((step, at) => <Fragment key={step}>{at > 0 && <Icon name="arrow" size={12}/>}<span className={at === t.flow.length - 1 ? "is-on" : undefined}>{step}</span></Fragment>)}</span>;
-}
-
 function structuredData(lang, t) {
   return JSON.stringify({
     "@context": "https://schema.org", "@type": "SoftwareApplication", name: "EY Studio+ UX/UI Auditor",
@@ -187,26 +185,39 @@ export default function Landing() {
     <a className="skip-link" href="#main-content">{t.skip}</a>
     <header className="lp-header">
       <a className="brand lp-brand" href={langHref(lang)} aria-label={t.home}><img className="brand-logo" src={logo} alt="" width="1000" height="390"/></a>
-      <nav className="lp-lang" aria-label={t.language}>{Object.entries(LANGS).map(([code, label]) => <a key={code} href={langHref(code)} hrefLang={code} lang={code} aria-label={label} aria-current={code === lang ? "true" : undefined} onClick={event => chooseLang(event, code)}>{code.toUpperCase()}</a>)}</nav>
+      <div className="lp-header-actions">
+        <nav className="lp-lang" aria-label={t.language}>{Object.entries(LANGS).map(([code, label]) => <a key={code} href={langHref(code)} hrefLang={code} lang={code} aria-label={label} aria-current={code === lang ? "true" : undefined} onClick={event => chooseLang(event, code)}>{code.toUpperCase()}</a>)}</nav>
+        <a className="lp-open" href="/app">{t.openApp}</a>
+      </div>
     </header>
     <main id="main-content" tabIndex={-1} className="lp-main">
       <section className="lp-hero" aria-labelledby="lp-title">
         <div className="lp-intro">
-          <p className="eyebrow">{t.eyebrow}</p>
+          <p className="lp-eyebrow"><span aria-hidden="true"/>{t.eyebrow}</p>
           <h1 id="lp-title">{t.h1[0]}<span className="lp-word">{t.h1[1]}<i/><i/><i/><i/></span>{t.h1[2]}</h1>
           <p className="lp-lead">{t.lead}</p>
-          <a className="lp-cta" href="/app">{t.cta}<Icon name="arrow" size={18}/></a>
+          <div className="lp-actions">
+            <a className="lp-cta" href="/app">{t.cta}<Icon name="arrow" size={18}/></a>
+            <a className="lp-ghost" href="#demo">{t.seeIt}</a>
+          </div>
           <div className="lp-sources"><span>{t.sources}</span><ul>{SOURCES.map(id => <li key={id} title={t.sourceLabels[id]}><Icon3D name={id} size={30}/><span className="sr-only">{t.sourceLabels[id]}</span></li>)}</ul></div>
         </div>
+      </section>
+      <section id="demo" className="lp-demo-section" aria-labelledby="lp-demo-title">
+        <h2 id="lp-demo-title" className="sr-only">{t.seeIt}</h2>
         <AuditDemo lang={lang} t={t}/>
       </section>
-      <ul className="lp-benefits" aria-label={t.benefitsLabel}>{t.benefits.map(([title, text], index) => <li key={BENEFIT_ICONS[index]}><Icon3D name={BENEFIT_ICONS[index]} size={48}/><h2>{title}</h2><p>{text}</p><div className="lp-proof">{benefitProof(index, t)}</div></li>)}</ul>
+      <HowItWorks lang={lang} t={t} axes={AXES}/>
       <section className="lp-axes" aria-labelledby="lp-axes-title">
         <h2 id="lp-axes-title">{t.axesTitle}</h2>
         <p className="lp-axes-lead">{t.axesLead}</p>
         <ol>{AXES.map(axis => <li key={axis.id}><h3>{axis.name[lang]}</h3><p>{axis.question[lang]}</p><p className="lp-axis-meta">{t.criteria(axis.criteria)} · {axis.standards.join(" · ")}</p></li>)}</ol>
       </section>
+      <section className="lp-closing" aria-labelledby="lp-closing-title">
+        <h2 id="lp-closing-title">{t.closing}</h2>
+        <a className="lp-cta" href="/app">{t.cta}<Icon name="arrow" size={18}/></a>
+      </section>
     </main>
-    <footer className="lp-footer"><span>{t.footer[0]}</span><span>{t.footer[1]}</span></footer>
+    <footer className="lp-footer"><span>{t.footer[0]}</span><span>{t.footer[1]}</span><span className="lp-wordmark" aria-hidden="true">EY Studio+</span></footer>
   </div>;
 }

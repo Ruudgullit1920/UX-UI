@@ -609,7 +609,8 @@ def test_landing_page_runs_demo_and_has_one_start_action(ui):
     expect(page.locator(".lp-dims li")).to_have_count(7)
     expect(page.locator(".lp-axes li")).to_have_count(7)
     expect(page.get_by_text("Measured · axe-core", exact=True)).to_have_count(1)
-    expect(page.get_by_role("main").get_by_role("link")).to_have_count(1)
+    hrefs = page.get_by_role("main").get_by_role("link").evaluate_all("links => links.map(link => link.getAttribute('href'))")
+    assert set(hrefs) <= {"/app", "#demo"} and hrefs.count("/app") == 2, hrefs
     assert page.evaluate("document.querySelector('meta[name=description]').content").startswith("Audit websites")
     expect(page.locator("link[rel=alternate][hreflang=fr]")).to_have_attribute("href", base + "/?lang=fr")
     for width in [375, 768, 1024, 1440]:
@@ -617,7 +618,7 @@ def test_landing_page_runs_demo_and_has_one_start_action(ui):
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         axe(page)
         screenshot(page, f"landing-{width}-light")
-    page.get_by_role("link", name="Start an audit").click()
+    page.get_by_role("link", name="Start an audit").first.click()
     expect(page).to_have_url(base + "/app")
     expect(page.get_by_role("heading", name="New audit", exact=True)).to_be_visible()
     expect(page.locator(".source-icon .icon-3d")).to_have_count(4)
@@ -635,7 +636,7 @@ def test_landing_page_switches_between_english_and_french(ui):
     expect(page.get_by_role("heading", level=1)).to_have_text("Des audits UX/UI fondés sur des preuves.")
     expect(page.locator("html")).to_have_attribute("lang", "fr")
     expect(page).to_have_title("Outil d’audit UX/UI fondé sur des preuves | EY Studio+")
-    expect(page.get_by_role("link", name="Lancer un audit")).to_be_visible()
+    expect(page.get_by_role("link", name="Lancer un audit").first).to_be_visible()
     expect(page.locator("link[rel=canonical]")).to_have_attribute("href", base + "/?lang=fr")
     axe(page)
     page.goto(base + "/")
@@ -644,6 +645,33 @@ def test_landing_page_switches_between_english_and_french(ui):
     expect(page).to_have_url(base + "/")
     expect(page.locator("html")).to_have_attribute("lang", "en")
 
+
+FORBIDDEN_COPY = ("Claude", "VLM", "machine finding")
+
+
+def test_landing_how_it_works_and_copy(ui):
+    page, instance, _ = ui
+    base = f"http://127.0.0.1:{instance.server_port}"
+    methodology = json.loads((ROOT / "shared/config/audit_methodology_v3.json").read_text(encoding="utf-8"))
+    criteria_total = sum(len(axis["criteria"]) for axis in methodology["axes"])
+    page.goto(base + "/")
+    steps = page.locator("ol.lp-how-steps > li")
+    expect(steps).to_have_count(3)
+    expect(page.locator("ol.lp-how-steps h3")).to_have_count(3)
+    expect(steps.first).to_have_attribute("aria-current", "step")
+    expect(page.get_by_role("banner").get_by_role("link", name="Open the app")).to_have_attribute("href", "/app")
+    expect(page.get_by_role("link", name="See it work")).to_have_attribute("href", "#demo")
+    expect(page.get_by_role("heading", name="How every audit is built")).to_be_visible()
+    expect(page.get_by_text("See the evidence behind your product’s UX.")).to_be_visible()
+    expect(steps.nth(1)).to_contain_text(f"Check 7 axes, {criteria_total} criteria.")
+    text = page.evaluate("document.body.innerText")
+    assert not [word for word in FORBIDDEN_COPY if word in text]
+    page.goto(base + "/?lang=fr")
+    for copy in ("Voir l’audit en action", "Ouvrir l’application", "Comment chaque audit est construit", "Voyez les preuves derrière l’UX de votre produit."):
+        expect(page.get_by_text(copy, exact=True).first).to_be_visible()
+    expect(steps.nth(1)).to_contain_text(f"Vérifier 7 axes, {criteria_total} critères.")
+    text = page.evaluate("document.body.innerText")
+    assert not [word for word in FORBIDDEN_COPY if word in text]
 
 def _open_report_with_teaser(page):
     page.route(re.compile(r"https://(app\.)?cal\.com/.*"), lambda route: route.fulfill(content_type="text/html", body="<!doctype html><html lang='en'><title>Booking</title><body>Booking calendar</body></html>"))
