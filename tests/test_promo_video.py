@@ -172,3 +172,20 @@ def test_evidence_labels_and_times():
     assert text.count(c["measured"]) == 1 and text.count(c["expertReview"]) == 4
     _, found = _findings_markup()
     assert [float(a["data-sfx"]) for a in found] == FINDING_TIMES
+
+
+def test_stat_counter():
+    c, found = copy(), tags(COMPS / "stat.html")
+    counter = next(a for t, a in found if a.get("id") == "stat-count")
+    assert counter["data-to"] == str(sum(axis["criteria"] for axis in assets("axes.json"))) == "67"
+    chips = re.findall(r'<li class="stat-chip"[^>]*>(.*?)</li>', text_of("stat"))
+    assert [re.sub(r"<[^>]+>.*", "", chip).strip() for chip in chips] == [axis["fr"] for axis in assets("axes.json")]
+    assert c["stat"][0] in visible_text("stat") and "critères." in visible_text("stat")
+
+
+def test_expert_card():
+    c, text = copy(), visible_text("report-expert")
+    for key in ("report", "expert", "expertName", "expertTitle", "cta"):
+        assert c[key] in text, key
+    photo = next(a for t, a in tags(COMPS / "report-expert.html") if t == "img" and a.get("id") == "re-photo")
+    assert photo["src"] == "assets/expert.jpg" and photo["alt"] == c["expertName"]
