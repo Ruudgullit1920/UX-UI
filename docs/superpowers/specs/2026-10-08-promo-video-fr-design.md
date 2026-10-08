@@ -29,7 +29,7 @@ It is inspired by the pacing and structure of the source video (`op7418-21031482
 | 0–4.5 s | `hook` | « Vos utilisateurs ne se plaignent pas. » → « Ils partent. » → « Et vous ne savez pas pourquoi. » | Dot field drifting. On « Ils partent », some dots fall away and fade |
 | 4.5–6.5 s | `logo` | — | The dots gather into the EY Studio+ logo |
 | 6.5–9 s | `solution` | Giant word « Audit UX/UI », subtitle « mené par un agent IA » | Giant thin-weight word (source's « Switch » frame) over the light horizon arc |
-| 9–12 s | `input` | « Un lien. Une app. Une maquette Figma. » | Three source cards (site, app, Figma) rise in with a stagger, one per phrase. No URL is typed |
+| 9–12 s | `input` | « Un lien. Une app. Une maquette Figma. » | `https://exemple.fr` (a neutral example, never a real client) is typed into an input, then three source cards (site, app, Figma) rise in with a stagger, one per phrase |
 | 12–17 s | `evidence` | « Chaque constat, sa preuve. » | The W3C capture rises in with a 3D tilt that settles flat. The 5 findings draw in one by one as framed boxes with FR labels and a tick each |
 | 17–20 s | `stat` | « 7 axes. 67 critères. » | A counter goes 0 → 67 while the 7 axis chips orbit |
 | 20–22.5 s | `report-expert` (a) | « Un rapport prêt pour le comité. » | The client report cover (light style) slides in with scores out of 100 |

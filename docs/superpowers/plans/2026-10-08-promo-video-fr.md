@@ -70,9 +70,9 @@
 
 **Interfaces:** produces `lib/horizon.css` (class `.horizon`: the light arc, rim and glow, sized by `--horizon-top`). `end.html` reuses it in Task 6.
 
-- [ ] Step 1: write the tests. `test_solution_input_copy` (the strings are present and match `copy.json`). `test_input_has_no_url` (`input.html` has no `<input`, no `http` and no `.fr`/`.com` text). `test_solution_giant_word` (the giant word « Audit UX/UI » has a computed font-weight ≤ 300 and a font-size ≥ 220 px in its inline style or class, and `.horizon` is present).
+- [ ] Step 1: write the tests. `test_solution_input_copy` (the strings are present and match `copy.json`). `test_input_types_example_url` (the only URL in `input.html` is `https://exemple.fr`, never a real client). `test_solution_giant_word` (the giant word « Audit UX/UI » has a computed font-weight ≤ 300 and a font-size ≥ 220 px in its inline style or class, and `.horizon` is present).
 - [ ] Step 2: run the tests. Expected: FAIL.
-- [ ] Step 3: implement. Solution: the horizon arc rises from below. The giant thin word « Audit UX/UI » fades in with blur-to-sharp, then the subtitle « mené par un agent IA » reveals letter by letter, as in the reference frame. Input: the headline on the left, its three phrases appearing in turn. On the right, three source cards (site, app, Figma, as inline SVG icons with labels) rise in with a 3D tilt, each synced to its phrase.
+- [ ] Step 3: implement. Solution: the horizon arc rises from below. The giant thin word « Audit UX/UI » fades in with blur-to-sharp, then the subtitle « mené par un agent IA » reveals letter by letter, as in the reference frame. Input: the headline on the left, its three phrases appearing in turn. On the right, an input box types `https://exemple.fr` character by character (seek-safe, driven by the timeline, from 9.2 to 10.2 s). Below it, three source cards (site, app, Figma, as inline SVG icons with labels) rise in with a 3D tilt, each synced to its phrase.
 - [ ] Step 4: run the tests and expect PASS. Run `snapshot --at 7.5,10,11.5` and check the PNGs.
 - [ ] Step 5: commit, "Add the solution and input beats".
 
