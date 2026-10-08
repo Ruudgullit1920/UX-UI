@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="fr" data-resolution="landscape">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>EY Studio+ · Audit UX/UI par agent IA (30 s)</title>
+    <script src="lib/gsap.min.js"></script>
+    <link rel="stylesheet" href="tokens.css" />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: #FFFFFF; }
+      #main { position: relative; width: 100%; height: 100%; overflow: hidden; background: #FFFFFF; font-family: var(--font); }
+    </style>
+  </head>
+  <body>
+    <div id="main" data-composition-id="main" data-start="0" data-duration="30" data-width="1920" data-height="1080">
+      <div id="hook" data-composition-id="hook" data-composition-src="compositions/hook.html" data-start="0" data-duration="4.5" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div id="logo" data-composition-id="logo" data-composition-src="compositions/logo.html" data-start="4.5" data-duration="2" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div id="solution" data-composition-id="solution" data-composition-src="compositions/solution.html" data-start="6.5" data-duration="2.5" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div id="input" data-composition-id="input" data-composition-src="compositions/input.html" data-start="9" data-duration="3" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div id="evidence" data-composition-id="evidence" data-composition-src="compositions/evidence.html" data-start="12" data-duration="5" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div id="stat" data-composition-id="stat" data-composition-src="compositions/stat.html" data-start="17" data-duration="3" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div id="report-expert" data-composition-id="report-expert" data-composition-src="compositions/report-expert.html" data-start="20" data-duration="6" data-track-index="1" data-width="1920" data-height="1080"></div>
+      <div id="end" data-composition-id="end" data-composition-src="compositions/end.html" data-start="26" data-duration="4" data-track-index="1" data-width="1920" data-height="1080"></div>
+    </div>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>
