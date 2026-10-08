@@ -102,3 +102,24 @@ def test_assets_are_local():
             base = PROJECT if path.parent == COMPS else path.parent
             assert (base / ref).resolve().is_file(), (path, ref)
             assert PROJECT in (base / ref).resolve().parents, (path, ref)
+
+
+def visible_text(name):
+    """Composition text with tags removed, so split-word markup still reads as the sentence."""
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", text_of(name)))
+
+
+def test_dotfield_is_deterministic():
+    source = (PROJECT / "lib" / "dotfield.js").read_text(encoding="utf-8")
+    assert not re.search(r"Math\.random|Date\.now|performance\.now|requestAnimationFrame", source)
+    assert "mulberry32" in source
+    points = (PROJECT / "lib" / "logo-points.js").read_text(encoding="utf-8")
+    assert points.startswith("window.LOGO_POINTS = [")
+
+
+def test_hook_copy():
+    text = visible_text("hook")
+    positions = [text.index(line) for line in copy()["hook"]]
+    assert positions == sorted(positions)
+    assert "createDotField" in text_of("hook") and "createDotField" in text_of("logo")
+    assert "assets/ey-studio-plus.png" in text_of("logo")
