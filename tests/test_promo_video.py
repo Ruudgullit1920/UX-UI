@@ -123,3 +123,25 @@ def test_hook_copy():
     assert positions == sorted(positions)
     assert "createDotField" in text_of("hook") and "createDotField" in text_of("logo")
     assert "assets/ey-studio-plus.png" in text_of("logo")
+
+
+def test_solution_input_copy():
+    c = copy()
+    solution, given = visible_text("solution"), visible_text("input")
+    assert c["solution"]["word"] in solution and c["solution"]["subtitle"] in solution
+    for phrase in c["input"] + c["sources"] + ["Lancer un audit"]:
+        assert phrase in given, phrase
+
+
+def test_input_types_example_url():
+    urls = re.findall(r"https?://[^\s\"'<]+|[\w-]+\.(?:fr|com)\b", text_of("input"))
+    assert urls and set(urls) == {"https://exemple.fr"}
+
+
+def test_solution_giant_word():
+    source = text_of("solution")
+    rule = re.search(r"#solution-word\s*\{([^}]*)\}", source).group(1)
+    assert int(re.search(r"font-weight:\s*(\d+)", rule).group(1)) <= 300
+    assert int(re.search(r"font-size:\s*(\d+)px", rule).group(1)) >= 220
+    assert 'class="horizon"' in source
+    assert 'href="lib/horizon.css"' in (PROJECT / "index.html").read_text(encoding="utf-8")
