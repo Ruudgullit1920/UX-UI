@@ -89,7 +89,13 @@ def test_facts():
     assert [{k: f[k] for k in ("axis", "measured", "box", "fr")} for f in assets("findings.json")] == expected
 
 
+# Kept out of git on purpose (the expert's photo, the personal-use test music): a fresh clone won't have them.
+LOCAL_ONLY = {"assets/expert.jpg", "assets/audio/music-test.mp3"}
+
+
 def test_assets_are_local():
+    ignored = (PROJECT / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert LOCAL_ONLY <= set(ignored)
     refs = re.compile(r'''(?:src|href)=["']([^"'#]+)["']|url\(["']?([^"')]+)["']?\)''')
     for path in project_files():
         if path.suffix not in {".html", ".css"}:
@@ -100,6 +106,8 @@ def test_assets_are_local():
                 continue
             assert not ref.startswith(("http:", "https:", "/")), (path, ref)
             base = PROJECT if path.parent == COMPS else path.parent
+            if ref in LOCAL_ONLY and not (base / ref).is_file():
+                continue
             assert (base / ref).resolve().is_file(), (path, ref)
             assert PROJECT in (base / ref).resolve().parents, (path, ref)
 
