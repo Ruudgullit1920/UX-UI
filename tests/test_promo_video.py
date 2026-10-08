@@ -197,3 +197,20 @@ def test_end_copy():
         assert line in text, line
     assert 'src="assets/ey-studio-plus.png"' in source
     assert 'class="horizon"' in source and "createDotField" in source
+
+
+def test_audio_tracks():
+    audio = [a for t, a in tags(PROJECT / "index.html") if t == "audio"]
+    assert all(a.get("id") for a in audio)
+    music = [a for a in audio if a["id"] == "music"]
+    assert len(music) == 1
+    assert (float(music[0]["data-start"]), float(music[0]["data-duration"])) == (0, 30)
+    assert float(music[0]["data-volume"]) <= 0.6
+    ticks = sorted(float(a["data-start"]) for a in audio if a["id"].startswith("tick-finding"))
+    assert len(ticks) == 5 and all(abs(t - e) <= 0.05 for t, e in zip(ticks, FINDING_TIMES))
+    counter = [float(a["data-start"]) for a in audio if a["id"].startswith("tick-count")]
+    assert counter and all(17.3 <= t <= 19.0 for t in counter)
+    assert [float(a["data-start"]) for a in audio if a["id"] == "tick-cta"] == [25.0]
+    credits = (PROJECT / "assets" / "audio" / "CREDITS.md").read_text(encoding="utf-8")
+    for name in {Path(a["src"]).name for a in audio}:
+        assert name in credits, name
