@@ -21,6 +21,7 @@
           .fadeOut(1.35, 1.75);
         bindDotField(tl, field, 2);
         tl.fromTo("#logo-mark", { opacity: 0, scale: .985 }, { opacity: 1, scale: 1, duration: .45, ease: "power2.out" }, 1.2);
+        tl.to("#logo-mark", { opacity: 0, scale: 1.12, filter: "blur(10px)", duration: .25, ease: "power2.in" }, 1.75);
         window.__timelines["logo"] = tl;
       </script>
     </template>

@@ -189,3 +189,11 @@ def test_expert_card():
         assert c[key] in text, key
     photo = next(a for t, a in tags(COMPS / "report-expert.html") if t == "img" and a.get("id") == "re-photo")
     assert photo["src"] == "assets/expert.jpg" and photo["alt"] == c["expertName"]
+
+
+def test_end_copy():
+    c, text, source = copy(), visible_text("end"), text_of("end")
+    for line in c["payoff"] + [c["tagline"]]:
+        assert line in text, line
+    assert 'src="assets/ey-studio-plus.png"' in source
+    assert 'class="horizon"' in source and "createDotField" in source
