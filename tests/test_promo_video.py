@@ -145,3 +145,30 @@ def test_solution_giant_word():
     assert int(re.search(r"font-size:\s*(\d+)px", rule).group(1)) >= 220
     assert 'class="horizon"' in source
     assert 'href="lib/horizon.css"' in (PROJECT / "index.html").read_text(encoding="utf-8")
+
+
+FINDING_TIMES = [13.2, 13.9, 14.6, 15.3, 16.0]
+
+
+def _findings_markup():
+    root = next(a for t, a in tags(COMPS / "evidence.html") if a.get("data-composition-id") == "evidence")
+    return float(root["data-scale"]), [a for t, a in tags(COMPS / "evidence.html") if "finding" in a.get("class", "").split()]
+
+
+def test_evidence_boxes_scaled():
+    scale, found = _findings_markup()
+    assert len(found) == 5
+    for item, attrs in zip(assets("findings.json"), found):
+        style = dict(re.findall(r"([\w-]+):\s*([\d.]+)px", attrs["style"]))
+        for key, value in zip(("left", "top", "width", "height"), item["box"]):
+            assert abs(float(style[key]) - value * scale) <= 1, (item["fr"], key)
+
+
+def test_evidence_labels_and_times():
+    c, text = copy(), visible_text("evidence")
+    assert c["evidence"] in text
+    for item in assets("findings.json"):
+        assert item["fr"] in text
+    assert text.count(c["measured"]) == 1 and text.count(c["expertReview"]) == 4
+    _, found = _findings_markup()
+    assert [float(a["data-sfx"]) for a in found] == FINDING_TIMES
