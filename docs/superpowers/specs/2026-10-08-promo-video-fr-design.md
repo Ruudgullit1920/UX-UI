@@ -28,18 +28,19 @@ It is inspired by the pacing and structure of the source video (`op7418-21031482
 |---|---|---|---|
 | 0–4.5 s | `hook` | « Vos utilisateurs ne se plaignent pas. » → « Ils partent. » → « Et vous ne savez pas pourquoi. » | Dot field drifting. On « Ils partent », some dots fall away and fade |
 | 4.5–6.5 s | `logo` | — | The dots gather into the EY Studio+ logo |
-| 6.5–9 s | `solution` | « L'audit UX/UI, mené par un agent IA. » | Headline centred, soft violet/yellow glow |
-| 9–12 s | `input` | « Un lien. Une app. Une maquette Figma. » | A URL is typed into an input. Site, app and Figma icons pop in |
+| 6.5–9 s | `solution` | Giant word « Audit UX/UI », subtitle « mené par un agent IA » | Giant thin-weight word (source's « Switch » frame) over the light horizon arc |
+| 9–12 s | `input` | « Un lien. Une app. Une maquette Figma. » | Three source cards (site, app, Figma) rise in with a stagger, one per phrase. No URL is typed |
 | 12–17 s | `evidence` | « Chaque constat, sa preuve. » | The W3C capture rises in with a 3D tilt that settles flat. The 5 findings draw in one by one as framed boxes with FR labels and a tick each |
 | 17–20 s | `stat` | « 7 axes. 67 critères. » | A counter goes 0 → 67 while the 7 axis chips orbit |
 | 20–22.5 s | `report-expert` (a) | « Un rapport prêt pour le comité. » | The client report cover (light style) slides in with scores out of 100 |
 | 22.5–26 s | `report-expert` (b) | « Puis un expert UX/UI, pour les recommandations et la refonte. » | Expert card (photo, name, title). The cursor clicks « Réserver un appel avec un expert » |
 | 26–28 s | `end` (a) | « L'agent IA audite. L'expert transforme. » | Centred headline |
-| 28–30 s | `end` (b) | Logo + « Audit UX/UI par agent IA · EY Studio+ » | Faint dot field returns behind the logo |
+| 28–30 s | `end` (b) | Logo + « Audit UX/UI par agent IA · EY Studio+ » | Logo above the light horizon arc, faint dot field behind (mirrors the source's end card) |
 
 ## Visual language
 - **Tokens** (copied from `src/ui/frontend/styles/landing.css`): ink `#1F2430`, ink-2 `#3D4456`, muted `#5B6275`, line `#E4E7EF`, canvas `#F7F8FC`, accent `#5B3FD9`, accent-soft `#EFEBFF`, EY yellow `#FFE600` (used sparingly), ease `cubic-bezier(.2,.8,.2,1)`.
-- **Light only.** Where the source uses a dark glowing horizon, we use a soft violet/yellow glow on white.
+- **Light only.** The source's dark planet horizon becomes a **light horizon arc**: a pale arc filling the bottom third of the frame, with a thin violet→yellow rim light and a soft glow above it, on white. It is used in `solution` and `end` (b), as the source uses it for its brand moments. Reference: the user's « Switch » frame from the source at 0:24.
+- **Giant-word treatment:** one or two words in a very thin weight (≥ 220 px), with a small, bold subtitle under them that reveals letter by letter, as in the reference frame. Used once, in `solution`.
 - **Type:** the landing font, large and tightly tracked. Feature beats put the headline on the left and the screen on the right. The hook, stat and end beats are centred.
 - **Motion:** screens rise in with a slight 3D tilt that settles flat. Text uses a staggered blur-to-sharp reveal. Transitions between beats are quick zoom-throughs with no fades to black. Main cuts align with the music's beat.
 

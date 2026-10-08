@@ -34,6 +34,7 @@
 
 **Files:**
 - Create: `video/promo-fr/` via `npx hyperframes@0.8.141 init` (keep `hyperframes.json`, `package.json`, `index.html`).
+- Create: `video/promo-fr/renders/reference/` (git-ignored): the source video `op7418-2103148288400924827.mp4` plus its 4×5 contact sheet and the user's « Switch » frame, kept as the visual reference for every task.
 - Create: `video/promo-fr/tokens.css`, `video/promo-fr/copy.json` (all FR strings keyed by beat), `video/promo-fr/.gitignore` (`renders/`, `assets/expert.jpg`).
 - Create: `video/promo-fr/assets/` containing `ey-studio-plus.png`, `w3c-bad-citylights.jpg` (copied), `findings.json` (5 findings: axis, severity, measured, box, fr text, copied from `Landing.jsx`), `axes.json` (7 × {id, fr short, criteria}), `expert.jpg` (the user's photo, cropped square on the face, 600×600).
 - Create: 8 empty beat files `video/promo-fr/compositions/{hook,logo,solution,input,evidence,stat,report-expert,end}.html`, each with a root having the correct `data-duration`.
@@ -67,9 +68,11 @@
 
 **Files:** fill `compositions/solution.html` and `compositions/input.html`, and add the source icons as inline SVG (site, app, Figma). Extend the tests.
 
-- [ ] Step 1: write the tests. `test_solution_input_copy` (the strings are present and match `copy.json`). `test_input_types_url` (the typed URL is a neutral example, `exemple.fr`, not a real client).
+**Interfaces:** produces `lib/horizon.css` (class `.horizon`: the light arc, rim and glow, sized by `--horizon-top`). `end.html` reuses it in Task 6.
+
+- [ ] Step 1: write the tests. `test_solution_input_copy` (the strings are present and match `copy.json`). `test_input_has_no_url` (`input.html` has no `<input`, no `http` and no `.fr`/`.com` text). `test_solution_giant_word` (the giant word « Audit UX/UI » has a computed font-weight ≤ 300 and a font-size ≥ 220 px in its inline style or class, and `.horizon` is present).
 - [ ] Step 2: run the tests. Expected: FAIL.
-- [ ] Step 3: implement. Solution: a centred headline with a soft violet/yellow glow. Input: the headline on the left, and on the right an input box that types `https://exemple.fr` character by character (seek-safe, driven by the timeline). The 3 source chips pop in with a stagger.
+- [ ] Step 3: implement. Solution: the horizon arc rises from below. The giant thin word « Audit UX/UI » fades in with blur-to-sharp, then the subtitle « mené par un agent IA » reveals letter by letter, as in the reference frame. Input: the headline on the left, its three phrases appearing in turn. On the right, three source cards (site, app, Figma, as inline SVG icons with labels) rise in with a 3D tilt, each synced to its phrase.
 - [ ] Step 4: run the tests and expect PASS. Run `snapshot --at 7.5,10,11.5` and check the PNGs.
 - [ ] Step 5: commit, "Add the solution and input beats".
 
@@ -103,7 +106,7 @@
 
 - [ ] Step 1: write the test `test_end_copy` (the payoff « L'agent IA audite. L'expert transforme. » and the tagline « Audit UX/UI par agent IA · EY Studio+ » are present, and the logo is shown).
 - [ ] Step 2: run the test. Expected: FAIL.
-- [ ] Step 3: implement. The payoff runs 26–28 s, centred. Then the logo and tagline, with the faint dot field returning (reusing `createDotField`). Add the zoom-through transitions (about 0.3 s, no black frames).
+- [ ] Step 3: implement. The payoff runs 26–28 s, centred. Then the logo and tagline above the light horizon arc (`lib/horizon.css`), with the faint dot field returning (reusing `createDotField`). Add the zoom-through transitions (about 0.3 s, no black frames).
 - [ ] Step 4: run the tests and expect PASS. Run `npx hyperframes check` with no errors. Run `snapshot` at the midpoint of every beat and assemble a storyboard sheet with `ffmpeg … tile=4x3` into `renders/storyboard.png`.
 - [ ] Step 5: commit, "Add the end card and beat transitions". **Then stop: the user approves the storyboard** (spec review loop step 1).
 
@@ -123,6 +126,6 @@
 
 - [ ] Step 1: `npx hyperframes render --quality draft -o renders/preview.mp4`. Check with `ffprobe` that the duration is 30.0 s ±0.05 and the size is 1920×1080. **Stop: the user reviews the timing.**
 - [ ] Step 2: after approval, `npx hyperframes render -o renders/promo-fr-30s.mp4` at final quality.
-- [ ] Step 3: make a 4×5 contact sheet of the final render and compare it with the source's sheet (one new visual idea every 2–5 s, no frame darker than the canvas).
+- [ ] Step 3: make a 4×5 contact sheet of the final render and compare it with the source's sheet (download the source again into `renders/reference/` if it's missing, and never commit it) (one new visual idea every 2–5 s, no frame darker than the canvas).
 - [ ] Step 4: run the full `tests/test_promo_video.py`, then the full suite in the background with the tail read.
 - [ ] Step 5: commit the README. Then one independent whole-branch review by a fresh subagent on the most capable model, as CLAUDE.md requires.
